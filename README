@@ -1,0 +1,6 @@
+CL-REDIS -- a Redis client for Common Lisp
+
+Tested (not thoroughly) with version <1.1
+Z-commands from 1.1 added, but not tested
+
+TODO: extend and complete test-suite

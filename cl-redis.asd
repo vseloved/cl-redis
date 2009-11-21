@@ -1,0 +1,41 @@
+;;; CL-REDIS system definition
+;;; (c) Vsevolod Dyomkin, see LICENSE file for permissions
+
+(in-package :asdf)
+
+(defsystem #:cl-redis
+  :name "Redis client"
+  :version '(0 1 0)
+  :maintainer "Vsevolod Dyomkin <vseloved@gmail.com>"
+  :licence "MIT"
+  :description "A Redis database interface through socket"
+  :depends-on (:rutils :usocket :cl-ppcre)
+  :serial t
+  :components ((:file "package")
+               (:file "redis")
+               (:file "commands")))
+
+
+#+:nuts
+(defmethod perform ((o test-op)
+                    (c (eql (find-system 'cl-redis))))
+  (operate 'load-op 'cl-redis)
+  (operate 'test-op 'cl-redis-test :force t))
+
+#+:nuts
+(defsystem #:cl-redis-test
+  :name "Redis client testsuite"
+  :version '(0 1 0)
+  :maintainer "Vsevolod Dyomkin <vseloved@gmail.com>"
+  :licence "MIT"
+  :description ""
+  :depends-on (:cl-redis :nuts)
+  :serial t
+  :components ((:file "test")))
+
+(defmethod perform ((o test-op)
+                    (c (eql (find-system 'cl-redis-test))))
+  (operate 'load-op '#:cl-redis-test)
+  (funcall (intern (symbol-name 'run-tests) '#:redis-test)))
+
+;;; end
