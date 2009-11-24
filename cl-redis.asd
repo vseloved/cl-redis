@@ -1,11 +1,11 @@
 ;;; CL-REDIS system definition
-;;; (c) Vsevolod Dyomkin, see LICENSE file for permissions
+;;; (c) Vsevolod Dyomkin, Oleksandr Manzyuk. see LICENSE file for permissions
 
 (in-package :asdf)
 
 (defsystem #:cl-redis
   :name "Redis client"
-  :version '(0 1 0)
+  :version '(0 2 0)
   :maintainer "Vsevolod Dyomkin <vseloved@gmail.com>"
   :licence "MIT"
   :description "A Redis database interface through socket"
@@ -25,7 +25,7 @@
 #+:nuts
 (defsystem #:cl-redis-test
   :name "Redis client testsuite"
-  :version '(0 1 0)
+  :version '(0 2 0)
   :maintainer "Vsevolod Dyomkin <vseloved@gmail.com>"
   :licence "MIT"
   :description ""

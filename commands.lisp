@@ -1,5 +1,5 @@
 ;;; CL-REDIS commands
-;;; (c) Vsevolod Dyomkin, see LICENSE file for permissions
+;;; (c) Vsevolod Dyomkin, Oleksandr Manzyuk. see LICENSE file for permissions
 
 
 (in-package :redis)
@@ -201,9 +201,14 @@ the DB having as index dbindex"
 
 (def-cmd SORT "Sort a Set or a List accordingly to the specified parameters"
   :inline
-  (key &rest args &key BY #| pattern |# LIMIT #| start end |# GET #| pattern |#
-                       ASC DESC ALPHA)
-  :ok)
+  (key &rest args
+       &key by     ; pattern
+            limit  ; '(start end)
+            get    ; pattern or a list of patterns
+            desc   ; should sort be descending? default is NIL
+            alpha  ; should sort be lexicographical? default is NIL
+            )
+  :multi)
 
 (def-cmd SAVE "Synchronously save the DB on disk"
   :inline () :ok)

@@ -1,5 +1,5 @@
 ;;; CL-REDIS implementation of the wire protocol
-;;; (c) Vsevolod Dyomkin, see LICENSE file for permissions
+;;; (c) Vsevolod Dyomkin, Oleksandr Manzyuk. see LICENSE file for permissions
 
 (in-package :redis)
 
@@ -42,7 +42,7 @@ data from the server, we'll reconnect"
 ;; conditions
 
 (define-condition redis-error (error)
-  ((raw :initarg :raw :initform '(error "Should provide raw Redis output")))
+  ((raw :initarg :raw :initform (error "Should provide raw Redis output")))
   (:report (lambda (c stream)
              (format stream "Redis error: ~a"
                      (slot-value condition 'raw)))))
@@ -54,30 +54,49 @@ data from the server, we'll reconnect"
 
 ;; outgoing
 
-(defun tell (type cmd &rest args)
-  "Send command to the server through a socket connection, that might be down.
+(defgeneric tell (type cmd &rest args)
+  (:documentation
+   "Send command to the server through a socket connection, that might be down.
 <_:arg Type /> is for now :inline or :bulk (otherwise error will be signalled).
-<_:arg Cmd /> is the command string, <_:arg args /> are arguments.
-In case of :bulk command last argument should be a <_:type sequence />"
-  (let (bulk)
-    (if (eq type :bulk)
-        (progn (multiple-value-setq (args bulk) (butlast2 args))
-               (assert (and bulk (typep bulk 'sequence))
-                       (bulk)
-                       "Bulk Redis data should be a sequence"))
-        (mapc (lambda (arg) (assert (not (blankp arg)) ()
-                                    "Redis argument should not be empty"))
-              args))
-    (maybe-connect)
-    (format *redis-out* "~a~{ ~a~}" cmd args)
-    (ecase type
-      (:inline (format *redis-out* +rtlf+))
-      (:bulk (format *redis-out* " ~a~a~a~a"
-                     (length bulk)
-                     +rtlf+
-                     bulk
-                     +rtlf+)))
-    (force-output *redis-out*)))
+<_:arg Cmd /> is the command string, <_:arg args /> are arguments. (Keyword ~
+arguments are also supported).
+In case of :bulk command last argument should be a <_:type sequence />"))
+
+(defmethod tell :before (type cmd &rest args)
+  (maybe-connect))
+
+(defmethod tell :after (type cmd &rest args)
+  (format *redis-out* "~a" +rtlf+)
+  (force-output *redis-out*))
+
+(defmethod tell (type cmd &rest args)
+  (error "Type ~A commands are not supported." type))
+
+(defmethod tell ((type (eql :bulk)) cmd &rest args)
+  (multiple-value-bind (args bulk) (butlast2 args)
+    (assert (and bulk (typep bulk 'sequence))
+            (bulk)
+            "Bulk Redis data must be a sequence")
+    (format *redis-out*
+            "~a~{ ~a~} ~a~a~a"
+            cmd args (length bulk) +rtlf+ bulk)))
+
+(defmethod tell ((type (eql :inline)) cmd &rest args)
+  (dolist (arg args)
+    (assert (not (blankp arg)) () "Redis argument must be non-empty"))
+  (format *redis-out* "~a~{ ~a~}" cmd args))
+
+(defmethod tell ((type (eql :inline)) (cmd (eql 'SORT)) &rest args)
+  (destructuring-bind (key . options) args
+    (assert (not (blankp key)) () "Redis argument must be non-empty")
+    (format *redis-out*
+            "SORT ~a~:[~; BY ~:*~a~]~{ GET ~a~}~:[~; DESC~]~:[~; ALPHA~]~:[~; LIMIT ~:*~{~a~^ ~}~]"
+            key
+            (getf options :by)
+            (mklist (getf options :get))
+            (getf options :desc)
+            (getf options :alpha)
+            (getf options :limit))))
 
 
 ;; ingoing
@@ -98,44 +117,43 @@ A variable _RAW is bound to the output, recieved from the socket"
          `(let* ((,raw (read-line *redis-in*))
                  (_raw (subseq ,raw 1)))
             (when *debug* (format t ,raw))
-            ,@body)))))
+            (handler-case
+                (progn
+                  ,@body)
+              (error () (redis-error _raw))))))))
 
 (def-expect-method :ok
-    (or (string= _raw "OK")
-        (redis-error _raw)))
+  (assert (string= _raw "OK"))
+  t)
 
 (def-expect-method :pong
-    (or (string= _raw "PONG")
-        (redis-error _raw)))
+  (assert (string= _raw "PONG"))
+  t)
 
 (def-expect-method :inline
   (subseq _raw 0 (1- (length _raw))))
 
 (def-expect-method :boolean
-    (case (elt _raw 0)
-      (#\0 nil)
-      (#\1 t)
-      (otherwise (redis-error _raw))))
+  (ecase (char _raw 0)
+    (#\0 nil)
+    (#\1 t)))
 
 (def-expect-method :integer
-    (cond
-      ((string= (subseq _raw 0 1) "-1") nil)
-      ((digit-char-p (elt _raw 0)) (values (parse-integer _raw)))
-      (t (redis-error _raw))))
+  (values (parse-integer _raw)))
 
 (def-expect-method :bulk
-    (handler-case (let ((size (parse-integer _raw)))
-                    (and (> size -1)
-                         (let ((raw (read-line *redis-in*)))
-                           (when *debug* (format t raw))
-                           (subseq raw 0 size))))
-      (error () (redis-error _raw))))
+  (let ((size (parse-integer _raw)))
+    (and (> size -1)
+         (let ((raw (make-array size :element-type 'character)))
+           (read-sequence raw *redis-in* :end size)
+           (read-char *redis-in*)  ; #\Return
+           (read-char *redis-in*)  ; #\Linefeed
+           (when *debug* (format t raw))
+           raw))))
 
 (def-expect-method :multi
-    (handler-case (let ((n (parse-integer _raw)))
-                    (loop :repeat n
-                       :collect (expect :bulk)))
-      (error () (redis-error _raw))))
+    (let ((n (parse-integer _raw)))
+      (loop :repeat n :collect (expect :bulk))))
 
 (defmethod expect ((type (eql :end)))
   ;; do nothing
@@ -163,10 +181,10 @@ is the function's doc itself"
          ,docstring
          ,(if-it (position '&rest (reverse args))
                  `(apply #'tell ,cmd-type
-                         ,(string cmd)
+                         ',cmd
                          ,@(butlast args (1+ it))
                          ,(last1 args it))
-                 `(tell ,cmd-type ,(string cmd) ,@args))
+                 `(tell ,cmd-type ',cmd ,@args))
          (expect ,reply-type))
        (export ',cmd-name :redis))))
 
