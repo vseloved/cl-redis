@@ -19,8 +19,8 @@
 #+:nuts
 (defmethod perform ((o test-op)
                     (c (eql (find-system 'cl-redis))))
-  (operate 'load-op 'cl-redis)
-  (operate 'test-op 'cl-redis-test :force t))
+  (operate 'load-op '#:cl-redis)
+  (operate 'test-op '#:cl-redis-test :force t))
 
 #+:nuts
 (defsystem #:cl-redis-test
@@ -33,6 +33,7 @@
   :serial t
   :components ((:file "test")))
 
+#+:nuts
 (defmethod perform ((o test-op)
                     (c (eql (find-system 'cl-redis-test))))
   (operate 'load-op '#:cl-redis-test)
