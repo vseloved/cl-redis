@@ -5,7 +5,8 @@
 
 (defpackage #:redis-test
   (:use :common-lisp :rutils.user :rutils.short #+:nuts :nuts
-        :redis))
+        :redis)
+  (:export #:run-tests))
 
 (in-package #:redis-test)
 
@@ -191,7 +192,8 @@
   (princ (if (every (lambda (rez)
                       (and-it (mklist rez)
                               (every #'true it)))
-                    (run-test #+nil tell
+                    (run-test #+nil
+                              tell
                               expect
                               commands
                               sort))

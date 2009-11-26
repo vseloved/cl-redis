@@ -14,7 +14,6 @@
 
 (defvar *debug* nil)
 
-
 (defun redis-connect (&key debug)
   "Connect to Redis server on <_:var *redis-host* />:<_:var *redis-port* />.
 When <_:var debug />, broadcast communication to <_:var *standard-output* />"
@@ -44,6 +43,7 @@ data from the server, we'll reconnect"
 (define-condition redis-error (error)
   ((raw :initarg :raw :initform (error "Should provide raw Redis output")))
   (:report (lambda (c stream)
+             (declare (ignore c))
              (format stream "Redis error: ~a"
                      (slot-value condition 'raw)))))
 
@@ -63,13 +63,16 @@ arguments are also supported).
 In case of :bulk command last argument should be a <_:type sequence />"))
 
 (defmethod tell :before (type cmd &rest args)
+  (declare (ignore type cmd args))
   (maybe-connect))
 
 (defmethod tell :after (type cmd &rest args)
+  (declare (ignore type cmd args))
   (format *redis-out* "~a" +rtlf+)
   (force-output *redis-out*))
 
 (defmethod tell (type cmd &rest args)
+  (declare (ignore cmd args))
   (error "Type ~A commands are not supported." type))
 
 (defmethod tell ((type (eql :bulk)) cmd &rest args)
@@ -108,52 +111,55 @@ Redis server"))
 (eval-always
   (defmacro def-expect-method (type &body body)
     "Define a specialized EXPECT method"
-    `(defmethod expect ((type (eql ,type)))
-       ,(format nil "Process output of type: ~a
+    (with-gensyms (raw)
+      `(defmethod expect ((type (eql ,type)))
+         ,(format nil "Process output of type: ~a
 A variable _RAW is bound to the output, recieved from the socket"
-                type)
-       (maybe-connect)
-       ,(with-gensyms (raw)
-         `(let* ((,raw (read-line *redis-in*))
-                 (_raw (subseq ,raw 1)))
-            (when *debug* (format t ,raw))
-            (handler-case
-                (progn
-                  ,@body)
-              (error () (redis-error _raw))))))))
+                  type)
+         (maybe-connect)
+         (let* ((,raw (read-line *redis-in*))
+                (_raw (string-right-trim '(#\Return) (subseq ,raw 1))))
+           (when *debug* (format t ,raw))
+           (handler-case
+               (progn
+                 ,@body)
+             (error () (redis-error _raw))))))))
 
 (def-expect-method :ok
-  (assert (string= _raw "OK"))
-  t)
+    (assert (string= _raw "OK"))
+  _raw)
 
 (def-expect-method :pong
-  (assert (string= _raw "PONG"))
-  t)
+    (assert (string= _raw "PONG"))
+  _raw)
 
 (def-expect-method :inline
-  (subseq _raw 0 (1- (length _raw))))
+    _raw)
 
 (def-expect-method :boolean
-  (ecase (char _raw 0)
-    (#\0 nil)
-    (#\1 t)))
+    (ecase (char _raw 0)
+      (#\0 nil)
+      (#\1 t)))
 
 (def-expect-method :integer
-  (values (parse-integer _raw)))
+    (values (parse-integer _raw)))
 
 (def-expect-method :bulk
-  (let ((size (parse-integer _raw)))
-    (and (> size -1)
-         (let ((raw (make-array size :element-type 'character)))
-           (read-sequence raw *redis-in* :end size)
-           (read-char *redis-in*)  ; #\Return
-           (read-char *redis-in*)  ; #\Linefeed
-           (when *debug* (format t raw))
-           raw))))
+    (let ((size (parse-integer _raw)))
+      (if (= size -1)
+          nil
+          (let ((raw (make-array size :element-type 'character)))
+            (read-sequence raw *redis-in* :end size)
+            (read-char *redis-in*)      ; #\Return
+            (read-char *redis-in*)      ; #\Linefeed
+            (when *debug* (format t raw))
+            raw))))
 
 (def-expect-method :multi
     (let ((n (parse-integer _raw)))
-      (loop :repeat n :collect (expect :bulk))))
+      (if (= n -1)
+          nil
+          (loop :repeat n :collect (expect :bulk)))))
 
 (defmethod expect ((type (eql :end)))
   ;; do nothing
@@ -165,7 +171,7 @@ A variable _RAW is bound to the output, recieved from the socket"
 
 ;; command definition
 
-(defparameter *cmd-prefix* "red"
+(defparameter *cmd-prefix* 'red
   "Prefix for functions, implementing Redis commands")
 
 (defmacro def-cmd (cmd docstring cmd-type (&rest args) reply-type)
@@ -175,15 +181,15 @@ command <_:arg cmd /> with the name <_:var *cmd-redix* />-<_:arg cmd />.
 respectedly undelying <_:fun tell /> and <_:fun expect />, ~
 <_: args /> is the <_:fun tell /> arguments, <_:arg docstring /> ~
 is the function's doc itself"
-  (let ((cmd-name (mksym cmd :format (strcat *cmd-prefix* "-~a"))))
+  (let ((cmd-name (intern (format nil "~a-~a" *cmd-prefix* cmd))))
     `(progn
        (defun ,cmd-name (,@args)
          ,docstring
-         ,(if-it (position '&rest (reverse args))
+         ,(if-it (position '&rest args)
                  `(apply #'tell ,cmd-type
                          ',cmd
-                         ,@(butlast args (1+ it))
-                         ,(last1 args it))
+                         ,@(subseq args 0 it)                   
+                         ,(nth (1+ it) args))
                  `(tell ,cmd-type ',cmd ,@args))
          (expect ,reply-type))
        (export ',cmd-name :redis))))

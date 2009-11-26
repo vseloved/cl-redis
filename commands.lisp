@@ -44,7 +44,7 @@
   :inline (key) :boolean)
 
 (def-cmd DEL "Delete a key"
-  :inline (key) :boolean)
+  :inline (key &rest keys) :integer)
 
 (def-cmd TYPE "Return the type of the value stored at key"
   :inline (key) :inline)
