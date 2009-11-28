@@ -43,7 +43,6 @@ data from the server, we'll reconnect"
 (define-condition redis-error (error)
   ((raw :initarg :raw :initform (error "Should provide raw Redis output")))
   (:report (lambda (condition stream)
-             (declare (ignore condition))
              (format stream "Redis error: ~a"
                      (slot-value condition 'raw)))))
 
