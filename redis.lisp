@@ -42,8 +42,8 @@ data from the server, we'll reconnect"
 
 (define-condition redis-error (error)
   ((raw :initarg :raw :initform (error "Should provide raw Redis output")))
-  (:report (lambda (c stream)
-             (declare (ignore c))
+  (:report (lambda (condition stream)
+             (declare (ignore condition))
              (format stream "Redis error: ~a"
                      (slot-value condition 'raw)))))
 
@@ -126,40 +126,40 @@ A variable _RAW is bound to the output, recieved from the socket"
              (error () (redis-error _raw))))))))
 
 (def-expect-method :ok
-    (assert (string= _raw "OK"))
+  (assert (string= _raw "OK"))
   _raw)
 
 (def-expect-method :pong
-    (assert (string= _raw "PONG"))
+  (assert (string= _raw "PONG"))
   _raw)
 
 (def-expect-method :inline
-    _raw)
+  _raw)
 
 (def-expect-method :boolean
-    (ecase (char _raw 0)
-      (#\0 nil)
-      (#\1 t)))
+  (ecase (char _raw 0)
+    (#\0 nil)
+    (#\1 t)))
 
 (def-expect-method :integer
-    (values (parse-integer _raw)))
+  (values (parse-integer _raw)))
 
 (def-expect-method :bulk
-    (let ((size (parse-integer _raw)))
-      (if (= size -1)
-          nil
-          (let ((raw (make-array size :element-type 'character)))
-            (read-sequence raw *redis-in* :end size)
-            (read-char *redis-in*)      ; #\Return
-            (read-char *redis-in*)      ; #\Linefeed
-            (when *debug* (format t raw))
-            raw))))
+  (let ((size (parse-integer _raw)))
+    (if (= size -1)
+        nil
+        (let ((raw (make-array size :element-type 'character)))
+          (read-sequence raw *redis-in* :end size)
+          (read-char *redis-in*)        ; #\Return
+          (read-char *redis-in*)        ; #\Linefeed
+          (when *debug* (format t raw))
+          raw))))
 
 (def-expect-method :multi
-    (let ((n (parse-integer _raw)))
-      (if (= n -1)
-          nil
-          (loop :repeat n :collect (expect :bulk)))))
+  (let ((n (parse-integer _raw)))
+    (if (= n -1)
+        nil
+        (loop :repeat n :collect (expect :bulk)))))
 
 (defmethod expect ((type (eql :end)))
   ;; do nothing
