@@ -28,6 +28,12 @@
 (def-cmd SETNX "Set a key to a string value if the key does not exist"
   :bulk (key value) :boolean)
 
+(def-cmd MSET "Set multiple keys to multiple values in a single atomic operation"
+  :multi (&rest key-value-plist) :ok)
+
+(def-cmd MSETNX "Set multiple keys to multiple values in a single atomic operation if none of the keys already exist"
+  :multi (&rest key-value-plist) :boolean)
+
 (def-cmd INCR "Increment the integer value of key"
   :inline (key) :integer)
 
@@ -155,7 +161,6 @@ all the Sets key2, ..., keyN, and store the resulting Set at dstkey"
 (def-cmd SMEMBERS "Return all the members of the Set value at key"
   :inline (key) :multi)
 
-
 (def-cmd ZADD "Add the specified member to the Set value at key or ~
 update the score if it already exist.
 If nil is returned, the element already existed in the set. Just the score ~
@@ -175,7 +180,7 @@ order, from the greatest to the smallest score"
 
 (def-cmd ZRANGEBYSCORE "Return all the elements with score >= min and ~
 score <= max (a range query) from the sorted set"
-  :inine (key min max) :multi)
+  :inline (key min max) :multi)
 
 (def-cmd ZCARD "Return the cardinality (number of elements) of the sorted set ~
 at key"
@@ -183,8 +188,11 @@ at key"
 
 (def-cmd ZSCORE "Return the score associated with the specified element of the ~
 sorted set at key"
-  :bulk (key element) :string)
+  :bulk (key element) :bulk)
 
+(def-cmd ZREMRANGEBYSCORE "Remove all the elements with score >= min and ~
+score <= max from the sorted set"
+  :inline (key min max) :integer)
 
 (def-cmd SELECT "Select the DB having the specified index"
   :inline (index) :ok)
