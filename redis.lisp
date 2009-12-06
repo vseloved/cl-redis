@@ -67,7 +67,6 @@ In case of :bulk command last argument should be a <_:type sequence />"))
 
 (defmethod tell :after (type cmd &rest args)
   (declare (ignore type cmd args))
-  (format *redis-out* "~a" +rtlf+)
   (force-output *redis-out*))
 
 (defmethod tell (type cmd &rest args)
@@ -80,26 +79,33 @@ In case of :bulk command last argument should be a <_:type sequence />"))
             (bulk)
             "Bulk Redis data must be a sequence")
     (format *redis-out*
-            "~a~{ ~a~} ~a~a~a"
-            cmd args (length bulk) +rtlf+ bulk)))
+            "~a~{ ~a~} ~a~a~a~a"
+            cmd args (length bulk) +rtlf+ bulk +rtlf+)))
 
 (defmethod tell ((type (eql :inline)) cmd &rest args)
   (dolist (arg args)
     (assert (not (blankp arg)) () "Redis argument must be non-empty"))
-  (format *redis-out* "~a~{ ~a~}" cmd args))
+  (format *redis-out* "~a~{ ~a~}~a" cmd args +rtlf+))
 
 (defmethod tell ((type (eql :inline)) (cmd (eql 'SORT)) &rest args)
   (destructuring-bind (key . options) args
     (assert (not (blankp key)) () "Redis argument must be non-empty")
     (format *redis-out*
-            "SORT ~a~:[~; BY ~:*~a~]~{ GET ~a~}~:[~; DESC~]~:[~; ALPHA~]~:[~; LIMIT ~:*~{~a~^ ~}~]"
+            "SORT ~a~:[~; BY ~:*~a~]~{ GET ~a~}~:[~; DESC~]~:[~; ALPHA~]~:[~; LIMIT ~:*~{~a~^ ~}~]~a"
             key
             (getf options :by)
             (mklist (getf options :get))
             (getf options :desc)
             (getf options :alpha)
-            (getf options :limit))))
+            (getf options :limit)
+            +rtlf+)))
 
+(defmethod tell ((type (eql :multi)) cmd &rest args)
+  (let ((bulks (cons (string cmd) args)))
+    (format *redis-out* "*~a~a" (length bulks) +rtlf+)
+    (dolist (bulk bulks)
+      (format *redis-out* "$~a~a~a~a"
+              (length bulk) +rtlf+ bulk +rtlf+))))
 
 ;; ingoing
 

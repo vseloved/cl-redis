@@ -153,6 +153,13 @@
     (check equal '("2")      (red-sdiff "s4" "s3"))
     (check true              (red-sdiffstore "s5" "s4" "s3"))
     (check equal '("2")      (red-smembers "s5"))
+    (check true              (red-mset "k1" "v1" "k2" "v2")) 
+    (check null              (red-msetnx "k1" "w1" "k3" "v3"))
+    (check null              (red-exists "k3"))
+    (check true              (red-msetnx "k4" "v4" "k5" "v5"))
+    (check equal '("v1" "v2" "v4" "v5") (red-mget "k1" "k2" "k4" "k5"))
+    (check true              (red-mset "k1" "w1" "k2" "v2"))
+    (check equal "w1"        (red-get "k1"))
     #+nil (red-move)
     #+nil (red-flushall)
     #+nil (red-sort)
@@ -184,6 +191,23 @@
                                              :get "object_*"
                                              :desc t))))
 
+(deftest z-commands ()
+  (with-test-db
+    (check true (red-zadd "set" 1 "e1"))
+    (check true (red-zadd "set" 2 "e2"))
+    (check true (red-zadd "set" 3 "e3"))
+    (check true (red-zrem "set" "e2"))
+    (check null (red-zrem "set" "e2"))
+    (check true (red-zadd "set" 10 "e2"))
+    (check true (red-zadd "set" 4 "e4"))
+    (check true (red-zadd "set" 5 "e5"))
+    (check equal 5 (red-zcard "set"))
+    (check equal "10" (red-zscore "set" "e2"))
+    (check equal '("e3" "e4" "e5")  (red-zrange "set" 1 3))
+    (check equal '("e4" "e3" "e1") (red-zrevrange "set" 2 4))
+    (check equal '("e5" "e2") (red-zrangebyscore "set" 5 10))
+    (check equal 3 (red-zremrangebyscore "set" 2 7))
+    (check equal '("e1" "e2") (red-zrange "set" 0 -1))))
 
 (defun run-tests (&key debug)
   (terpri)
@@ -192,11 +216,11 @@
   (princ (if (every (lambda (rez)
                       (and-it (mklist rez)
                               (every #'true it)))
-                    (run-test #+nil
-                              tell
+                    (run-test #+nil tell
                               expect
                               commands
-                              sort))
+                              sort
+                              z-commands))
              "OK"
              (format nil "some tests failed. See log file for details: ~a"
                      *logg-out*)))
