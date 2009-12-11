@@ -4,7 +4,7 @@
 (in-package :cl-user)
 
 (defpackage :redis
-  (:use :common-lisp :rutils.user :rutils.short :usocket
+  (:use :common-lisp :rutils.user :rutils.short :usocket :flexi-streams
         #+:nuts :nuts)
   (:export #:*redis-in*
            #:*redis-host*

@@ -9,7 +9,7 @@
   :maintainer "Vsevolod Dyomkin <vseloved@gmail.com>"
   :licence "MIT"
   :description "A Redis database interface through socket"
-  :depends-on (:rutils :usocket :cl-ppcre)
+  :depends-on (:rutils :usocket :cl-ppcre :flexi-streams)
   :serial t
   :components ((:file "package")
                (:file "redis")

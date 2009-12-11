@@ -3,26 +3,28 @@
 
 (in-package :redis)
 
-
-(defparameter +rtlf+ (format nil "~c~c" #\Return #\Linefeed))
-
 (defvar *redis-in* nil "Redis communication stream")
 (defvar *redis-out* nil "Redis communication stream")
 (defvar *redis-socket* nil)
 (defparameter *redis-host* #(127 0 0 1))
 (defparameter *redis-port* 6379)
+(defparameter *redis-external-format* (make-external-format :utf8 :eol-style :crlf))
 
-(defvar *debug* nil)
+(defun make-redis-stream (stream)
+  (make-flexi-stream stream
+                     :external-format *redis-external-format*
+                     :element-type 'octet))
 
-(defun redis-connect (&key debug)
-  "Connect to Redis server on <_:var *redis-host* />:<_:var *redis-port* />.
-When <_:var debug />, broadcast communication to <_:var *standard-output* />"
-  (setf *redis-socket* (socket-connect *redis-host* *redis-port*)
-        *redis-in* (socket-stream *redis-socket*)
-        *redis-out* (if (setf *debug* debug)
-                        (make-broadcast-stream (socket-stream *redis-socket*)
-                                               *standard-output*)
-                        (socket-stream *redis-socket*))))
+(defun redis-connect ()
+  "Connect to Redis server on <_:var *redis-host* />:<_:var *redis-port* />."
+  (setf *redis-socket* (socket-connect *redis-host*
+                                       *redis-port*
+                                       :element-type 'octet)
+        *redis-in*     (make-redis-stream (socket-stream *redis-socket*))
+        *redis-out*    (make-redis-stream (socket-stream *redis-socket*))))
+
+(defun redis-length (string)
+  (octet-length string :external-format *redis-external-format*))
 
 (defun maybe-connect ()
   "Unless we're already connected, redis-connect.
@@ -30,13 +32,9 @@ The logic of the whole Redis connection process is, that you don't
 disconnect from it, just the socket may be closed in some circumstances:
 the thread finishes execution, timeout occurs. If we still need to get some
 data from the server, we'll reconnect"
-  (unless (and *redis-in*
-               (handler-case (let ((test (read-char-no-hang *redis-in*)))
-                               (unread-char test *redis-in*)
-                               t)
-                 (error () nil)))
-    (redis-connect)))
-
+  (handler-case (when-it (read-char-no-hang *redis-in* nil nil)
+                  (unread-char it *redis-in*))
+    (error () (redis-connect))))
 
 ;; conditions
 
@@ -51,7 +49,6 @@ data from the server, we'll reconnect"
   "Signal specialised error"
   (error 'redis-error :raw raw))
 
-
 ;; outgoing
 
 (defgeneric tell (type cmd &rest args)
@@ -61,6 +58,9 @@ data from the server, we'll reconnect"
 <_:arg Cmd /> is the command string, <_:arg args /> are arguments. (Keyword ~
 arguments are also supported).
 In case of :bulk command last argument should be a <_:type sequence />"))
+
+(defun redis-write (control-string &rest args)
+  (write-line (apply #'format nil control-string args) *redis-out*))
 
 (defmethod tell :before (type cmd &rest args)
   (declare (ignore type cmd args))
@@ -79,34 +79,31 @@ In case of :bulk command last argument should be a <_:type sequence />"))
     (assert (and bulk (typep bulk 'sequence))
             (bulk)
             "Bulk Redis data must be a sequence")
-    (format *redis-out*
-            "~a~{ ~a~} ~a~a~a~a"
-            cmd args (length bulk) +rtlf+ bulk +rtlf+)))
+    (redis-write "~A~{ ~A~} ~A" cmd args (redis-length bulk))
+    (redis-write "~A" bulk)))
 
 (defmethod tell ((type (eql :inline)) cmd &rest args)
   (dolist (arg args)
     (assert (not (blankp arg)) () "Redis argument must be non-empty"))
-  (format *redis-out* "~a~{ ~a~}~a" cmd args +rtlf+))
+  (redis-write "~A~{ ~A~}" cmd args))
 
 (defmethod tell ((type (eql :inline)) (cmd (eql 'SORT)) &rest args)
   (destructuring-bind (key . options) args
     (assert (not (blankp key)) () "Redis argument must be non-empty")
-    (format *redis-out*
-            "SORT ~a~:[~; BY ~:*~a~]~{ GET ~a~}~:[~; DESC~]~:[~; ALPHA~]~:[~; LIMIT ~:*~{~a~^ ~}~]~a"
-            key
-            (getf options :by)
-            (mklist (getf options :get))
-            (getf options :desc)
-            (getf options :alpha)
-            (getf options :limit)
-            +rtlf+)))
+    (redis-write "SORT ~a~:[~; BY ~:*~a~]~{ GET ~a~}~:[~; DESC~]~:[~; ALPHA~]~:[~; LIMIT ~:*~{~a~^ ~}~]"
+                 key
+                 (getf options :by)
+                 (mklist (getf options :get))
+                 (getf options :desc)
+                 (getf options :alpha)
+                 (getf options :limit))))
 
 (defmethod tell ((type (eql :multi)) cmd &rest args)
   (let ((bulks (cons (string cmd) args)))
-    (format *redis-out* "*~a~a" (length bulks) +rtlf+)
+    (redis-write "*~A" (redis-length bulks))
     (dolist (bulk bulks)
-      (format *redis-out* "$~a~a~a~a"
-              (length bulk) +rtlf+ bulk +rtlf+))))
+      (redis-write "$~A" (redis-length bulk))
+      (redis-write "~A" bulk))))
 
 ;; ingoing
 
@@ -120,52 +117,49 @@ Redis server"))
     (with-gensyms (raw)
       `(defmethod expect ((type (eql ,type)))
          ,(format nil "Process output of type: ~a
-A variable _RAW is bound to the output, recieved from the socket"
+A variable RAW is bound to the output, recieved from the socket"
                   type)
          (maybe-connect)
-         (let* ((,raw (read-line *redis-in*))
-                (_raw (string-right-trim '(#\Return) (subseq ,raw 1))))
-           (when *debug* (format t ,raw))
+         (let* ((raw (subseq (read-line *redis-in*) 1)))
            (handler-case
                (progn
                  ,@body)
-             (error () (redis-error _raw))))))))
+             (error () (redis-error raw))))))))
 
 (def-expect-method :ok
-    (assert (string= _raw "OK"))
-  _raw)
+    (assert (string= raw "OK"))
+  raw)
 
 (def-expect-method :pong
-    (assert (string= _raw "PONG"))
-  _raw)
+    (assert (string= raw "PONG"))
+  raw)
 
 (def-expect-method :inline
-    _raw)
+    raw)
 
 (def-expect-method :boolean
-    (ecase (char _raw 0)
+    (ecase (char raw 0)
       (#\0 nil)
       (#\1 t)))
 
 (def-expect-method :integer
-    (values (parse-integer _raw)))
+    (values (parse-integer raw)))
 
 (def-expect-method :bulk
-    (let ((size (parse-integer _raw)))
+    (let ((size (parse-integer raw)))
       (if (= size -1)
           nil
-          (let ((raw (make-array size :element-type 'character)))
-            (read-sequence raw *redis-in* :end size)
-            (read-char *redis-in*)      ; #\Return
-            (read-char *redis-in*)      ; #\Linefeed
-            (when *debug* (format t raw))
-            raw))))
+          (let ((octets (make-array size :element-type 'octet)))
+            (read-sequence octets *redis-in*)
+            (read-byte *redis-in*)      ; #\Return
+            (read-byte *redis-in*)      ; #\Linefeed
+            (octets-to-string octets :external-format *redis-external-format*))))) 
 
 (def-expect-method :multi
-    (let ((n (parse-integer _raw)))
+    (let ((n (parse-integer raw)))
       (if (= n -1)
           nil
-          (loop :repeat n :collect (expect :bulk)))))
+          (loop repeat n collect (expect :bulk)))))
 
 (defmethod expect ((type (eql :end)))
   ;; do nothing
