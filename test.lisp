@@ -10,7 +10,7 @@
 
 (in-package #:redis-test)
 
-(define-symbol-macro +rtlf+ (format nil "~C~C" #\Return #\Linefeed))
+(defconstant +rtlf+ (format nil "~C~C" #\Return #\Linefeed))
 
 #+nil  ;; TODO: make the proper isolated test, that will not touch maybe-connect
 (deftest tell ()
@@ -23,11 +23,13 @@
            (tell :bulk "SET" "a" "123"))
          (format nil "SET a 3~a123~a" +rtlf+ +rtlf+)))
 
+#+nil
 (defun expect-from-str (expected input)
   (with-input-from-string (in (strcat input +rtlf+))
     (let ((*redis-in* (make-two-way-stream in *redis-out*)))
       (expect expected))))
-  
+
+#+nil
 (deftest expect ()
   (check true            (expect-from-str :ok "+OK"))
   (check true            (expect-from-str :pong "+PONG"))
@@ -285,8 +287,12 @@
     (check true                    (red-set "вага_3" "32"))
     (check equal '("1" "2" "3")    (red-sort "numbers"))
     (check equal '("1" "2" "3")    (red-sort "числа"))
+    (check equal '("2" "3")        (red-sort "numbers" :start 1 :end 2))
+    (check equal '("2" "3")        (red-sort "числа" :start 1 :end 2))
     (check equal '("3" "2" "1")    (red-sort "numbers" :desc t))
+    (check equal '("2" "1")        (red-sort "numbers" :desc t :start 1 :end 2))
     (check equal '("3" "2" "1")    (red-sort "числа" :desc t))
+    (check equal '("2" "1")        (red-sort "числа" :desc t :start 1 :end 2))
     (check equal '("2" "3" "1")    (red-sort "numbers" :by "weight_*"))
     (check equal '("2" "3" "1")    (red-sort "числа" :by "вага_*"))
     (check equal '("o2" "o3" "o1") (red-sort "numbers" :by "weight_*"
@@ -336,13 +342,12 @@
 (defun run-tests (&key debug)
   (terpri)
   (princ "Runnning CL-REDIS tests... ")
-  (setf redis::*debug* debug)
   (redis-connect)
   (princ (if (every (lambda (rez)
                       (and-it (mklist rez)
                               (every #'true it)))
                     (run-test #+nil tell
-                              expect
+                              #+nil expect
                               commands
                               sort
                               z-commands))
