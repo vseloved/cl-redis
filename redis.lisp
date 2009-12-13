@@ -3,11 +3,25 @@
 
 (in-package :redis)
 
-(defvar *redis-stream* nil "Redis communication stream.")
+(defvar *redis-stream* nil
+  "Redis communication stream.")
 
-(defparameter *redis-host* #(127 0 0 1))
-(defparameter *redis-port* 6379)
+(defparameter *redis-host* #(127 0 0 1)
+  "Default Redis connection host.")
+
+(defparameter *redis-port* 6379
+  "Default Redis connection port.")
+
 (defparameter *redis-external-format* (make-external-format :utf8 :eol-style :crlf))
+
+(defvar *echo-p* nil
+  "Whether the server-client communication should be echoed to the
+stream specified by *ECHO-STREAM*.  The default is NIL, meaning no
+echoing.")
+
+(defvar *echo-stream* *standard-output*
+  "A stream to which the server-client communication will be echoed
+for debugging purposes.  The default is *standard-output*.")
 
 ;; utils
 
@@ -15,20 +29,24 @@
   (octet-length string :external-format *redis-external-format*))
 
 (defun write-redis-line (fmt &rest args)
-  (write-line (apply #'format nil fmt args) *redis-stream*))
+  (let ((string (apply #'format nil fmt args)))
+    (when *echo-p* (format *echo-stream* "C: ~A~%" string))
+    (write-line string *redis-stream*)))
 
 ;; conditions
 
 (define-condition redis-error (error)
-  ((raw :initarg  :raw :initform (error "Must provide raw Redis output.")))
+  ((message
+    :initarg  :message
+    :initform (error "Must provide Redis error message.")))
   (:report (lambda (c stream)
              (declare (ignore c))
              (format stream "Redis error: ~a"
-                     (slot-value condition 'raw)))))
+                     (slot-value condition 'message)))))
 
-(defun redis-error (raw)
+(defun redis-error (message)
   "Signal specialised error."
-  (error 'redis-error :raw raw))
+  (error 'redis-error :message message))
 
 ;; connect
 
@@ -112,6 +130,7 @@ A variable REPLY is bound to the output, recieved from the socket."
          (let* ((,line (read-line *redis-stream*))
                 (,char (char ,line 0))
                 (reply (subseq ,line 1)))
+           (when *echo-p* (format *echo-stream* "S: ~A~%" ,line))
            (case ,char
              ((#\-)
               (redis-error reply))
@@ -147,7 +166,10 @@ A variable REPLY is bound to the output, recieved from the socket."
             (read-sequence octets *redis-stream*)
             (read-byte *redis-stream*)      ; #\Return
             (read-byte *redis-stream*)      ; #\Linefeed
-            (octets-to-string octets :external-format *redis-external-format*))))) 
+            (let ((string (octets-to-string octets
+                                            :external-format *redis-external-format*)))
+              (when *echo-p* (format *echo-stream* "S: ~A~%" string))
+              string))))) 
 
 (def-expect-method :multi
     (let ((n (parse-integer reply)))

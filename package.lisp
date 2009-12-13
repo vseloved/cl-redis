@@ -6,10 +6,11 @@
 (defpackage :redis
   (:use :common-lisp :rutils.user :rutils.short :usocket :flexi-streams
         #+:nuts :nuts)
-  (:export #:*redis-in*
-           #:*redis-host*
-           #:*redis-out*
+  (:export #:*redis-host*
            #:*redis-port*
+
+           #:*echo-p*
+           #:*echo-stream*
 
            #:*cmd-prefix*
 
