@@ -339,7 +339,7 @@
     (check equal '("e1" "e2") (red-zrange "set" 0 -1))
     (check equal '("елемент1" "елемент2") (red-zrange "множина" 0 -1))))
 
-(defun run-tests (&key debug)
+(defun run-tests ()
   (terpri)
   (princ "Runnning CL-REDIS tests... ")
   (redis-connect)
