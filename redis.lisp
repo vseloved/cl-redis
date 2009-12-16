@@ -3,16 +3,90 @@
 
 (in-package :redis)
 
-(defvar *redis-stream* nil
-  "Redis communication stream.")
+(defvar *connection* nil "The current CONNECTION object.")
 
-(defparameter *redis-host* #(127 0 0 1)
-  "Default Redis connection host.")
+(defclass connection ()
+  ((host
+    :initarg  :host
+    :initform #(127 0 0 1)
+    :reader   connection-host)
+   (port
+    :initarg  :port
+    :initform 6379
+    :reader   connection-port)
+   (encoding
+    :initarg  :encoding
+    :initform :utf-8
+    :reader   connection-encoding)
+   (stream
+    :initform nil
+    :accessor connection-stream))
+  (:documentation "Representation of a connection to Redis server."))
 
-(defparameter *redis-port* 6379
-  "Default Redis connection port.")
+(defmethod connection-external-format ((connection connection))
+  (make-external-format (connection-encoding connection) :eol-style :crlf))
 
-(defparameter *redis-external-format* (make-external-format :utf-8 :eol-style :crlf))
+(defmethod initialize-instance :after ((connection connection) &key)
+  (open-connection connection))
+  
+(defun open-connection (connection)
+  (handler-case (setf (connection-stream connection) (make-flexi-stream
+                                                      (socket-stream
+                                                       (socket-connect (connection-host connection)
+                                                                       (connection-port connection)
+                                                                       :element-type 'octet))
+                                                      :external-format (connection-external-format connection)
+                                                      :element-type 'octet))
+    ((or socket-error stream-error) (e)
+      (restart-case (error (wrap-connection-error e))
+        (:reconnect ()
+          :report "Try to reconnect."
+          (open-connection connection))))))
+
+(defun connection-open-p (connection)
+  (let ((stream (connection-stream connection)))
+    (and stream (open-stream-p stream))))
+
+(defun close-connection (connection)
+  (when (connection-open-p connection)
+    (close (connection-stream connection))))
+
+(defmacro with-reconnect-restart (connection &body body)
+  (with-unique-names (=connection= =body=)
+    `(let ((,=connection= ,connection))
+       (labels ((,=body= ()
+                  (handler-case (progn ,@body)
+                    ((or socket-error stream-error) (e)
+                      (restart-case (error (wrap-connection-error e))
+                        (:reconnect ()
+                          :report "Try to reconnect."
+                          (open-connection ,=connection=)
+                          (,=body=)))))))
+         (,=body=)))))
+
+(defmacro with-connection ((&key (host #(127 0 0 1)) (port 6379) (encoding :utf-8)) &body body)
+  `(let ((*connection* (make-instance 'connection :host ,host :port ,port :encoding ,encoding)))
+     (unwind-protect (progn ,@body)
+       (close-connection *connection*))))
+
+(defun connected-p ()
+  (and *connection* (connection-open-p *connection*)))
+
+(defun connect (&key (host #(127 0 0 1)) (port 6379) (encoding :utf-8))
+  (when (connected-p)
+    (restart-case (error "A connection to Redis server is already established.")
+      (:leave   ()
+        :report "Leave it."
+        (return-from connect))
+      (:replace ()
+        :report "Replace it with a new connection."
+        (disconnect))))
+  (setf *connection* (make-instance 'connection :host host :port port :encoding encoding)))
+
+(defun disconnect ()
+  (when (connected-p)
+    (close-connection *connection*))
+  (setf *connection* nil))
 
 (defvar *echo-p* nil
   "Whether the server-client communication should be echoed to the
@@ -26,13 +100,12 @@ for debugging purposes.  The default is *standard-output*.")
 ;; utils
 
 (defun byte-length (string)
-  "Return the length of STRING in octets encoded using *REDIS-EXTERNAL-FORMAT*."
-  (octet-length string :external-format *redis-external-format*))
+  (octet-length string :external-format (connection-external-format *connection*)))
 
 (defun write-redis-line (fmt &rest args)
   (let ((string (apply #'format nil fmt args)))
     (when *echo-p* (format *echo-stream* "C: ~A~%" string))
-    (write-line string *redis-stream*)))
+    (write-line string (connection-stream *connection*))))
 
 ;; conditions
 
@@ -54,30 +127,13 @@ errors occur that break the connection stream.  They offer a
   (:documentation "Raised when an error reply is received from the
 Redis server."))
 
-(define-condition redis-protocol-error (redis-error)
+(define-condition redis-bad-reply (redis-error)
   ()
   (:documentation "Raised when a Redis protocol error is detected."))
 
 (defun wrap-connection-error (e)
   (make-instance 'redis-connection-error
                  :message (princ-to-string e)))
-
-;; connect
-
-(defun redis-connect ()
-  (handler-case
-      (setf *redis-stream* (make-flexi-stream
-                            (socket-stream
-                             (socket-connect *redis-host*
-                                             *redis-port*
-                                             :element-type 'octet))
-                            :external-format *redis-external-format*
-                            :element-type 'octet))
-    ((or socket-error stream-error)
-        (e)
-      (restart-case (error (wrap-connection-error e))
-        (:reconnect () :report "Try to reconnect." (redis-connect))))))
-  
 
 ;; outgoing
 
@@ -91,7 +147,7 @@ In case of :bulk command last argument should be a <_:type sequence />."))
 
 (defmethod tell :after (type cmd &rest args)
   (declare (ignore type cmd args))
-  (force-output *redis-stream*))
+  (force-output (connection-stream *connection*)))
 
 (defmethod tell (type cmd &rest args)
   (declare (ignore cmd args))
@@ -147,13 +203,13 @@ Redis server"))
          ,(format nil "Process output of type ~a.
 A variable REPLY is bound to the output, recieved from the socket."
                   type)
-         (let* ((,line (read-line *redis-stream*))
+         (let* ((,line (read-line (connection-stream *connection*)))
                 (,char (char ,line 0))
                 (reply (subseq ,line 1)))
            (when *echo-p* (format *echo-stream* "S: ~A~%" ,line))
            (case ,char
              ((#\-)
-              (error 'redis-error-reply :message reply))
+              (error 'redis-bad-reply :message reply))
              ((#\+ #\: #\$ #\*)
               (progn ,@body))
              (otherwise
@@ -185,11 +241,11 @@ A variable REPLY is bound to the output, recieved from the socket."
     (if (= size -1)
         nil
         (let ((octets (make-array size :element-type 'octet)))
-          (read-sequence octets *redis-stream*)
-          (read-byte *redis-stream*)    ; #\Return
-          (read-byte *redis-stream*)    ; #\Linefeed
+          (read-sequence octets (connection-stream *connection*))
+          (read-byte (connection-stream *connection*))    ; #\Return
+          (read-byte (connection-stream *connection*))    ; #\Linefeed
           (let ((string (octets-to-string octets
-                                          :external-format *redis-external-format*)))
+                                          :external-format (connection-external-format *connection*))))
             (when *echo-p* (format *echo-stream* "S: ~A~%" string))
             string))))) 
 
@@ -208,20 +264,6 @@ A variable REPLY is bound to the output, recieved from the socket."
     
 ;; command definition
 
-(defmacro with-reconnect-restart (&body body)
-  (with-unique-names (body-name)
-    `(labels ((,body-name ()
-                (handler-case (progn ,@body)
-                  ((or socket-error stream-error)
-                      (e)
-                    (restart-case (error (wrap-connection-error e))
-                      (:reconnect
-                          ()
-                        :report "Try to reconnect."
-                        (redis-connect)
-                        (,body-name)))))))
-       (,body-name))))
-
 (defparameter *cmd-prefix* 'red
   "Prefix for functions, implementing Redis commands")
 
@@ -236,7 +278,7 @@ is the function's doc itself."
     `(progn
        (defun ,cmd-name (,@args)
          ,docstring
-         (with-reconnect-restart
+         (with-reconnect-restart *connection*
            ,(if-it (position '&rest args)
                    `(apply #'tell ,cmd-type
                            ',cmd

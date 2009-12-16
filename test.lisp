@@ -10,8 +10,6 @@
 
 (in-package #:redis-test)
 
-(defconstant +rtlf+ (format nil "~C~C" #\Return #\Linefeed))
-
 #+nil  ;; TODO: make the proper isolated test, that will not touch maybe-connect
 (deftest tell ()
   (check string=
@@ -287,12 +285,12 @@
     (check true                    (red-set "вага_3" "32"))
     (check equal '("1" "2" "3")    (red-sort "numbers"))
     (check equal '("1" "2" "3")    (red-sort "числа"))
-    (check equal '("2" "3")        (red-sort "numbers" :start 1 :end 2))
-    (check equal '("2" "3")        (red-sort "числа" :start 1 :end 2))
+    (check equal '("2" "3")        (red-sort "numbers" :start 1 :count 2))
+    (check equal '("2" "3")        (red-sort "числа" :start 1 :count 2))
     (check equal '("3" "2" "1")    (red-sort "numbers" :desc t))
-    (check equal '("2" "1")        (red-sort "numbers" :desc t :start 1 :end 2))
+    (check equal '("2" "1")        (red-sort "numbers" :desc t :start 1 :count 2))
     (check equal '("3" "2" "1")    (red-sort "числа" :desc t))
-    (check equal '("2" "1")        (red-sort "числа" :desc t :start 1 :end 2))
+    (check equal '("2" "1")        (red-sort "числа" :desc t :start 1 :count 2))
     (check equal '("2" "3" "1")    (red-sort "numbers" :by "weight_*"))
     (check equal '("2" "3" "1")    (red-sort "числа" :by "вага_*"))
     (check equal '("o2" "o3" "o1") (red-sort "numbers" :by "weight_*"
@@ -342,7 +340,7 @@
 (defun run-tests ()
   (terpri)
   (princ "Runnning CL-REDIS tests... ")
-  (redis-connect)
+  (connect)
   (princ (if (every (lambda (rez)
                       (and-it (mklist rez)
                               (every #'true it)))
