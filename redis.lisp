@@ -3,9 +3,9 @@
 
 (in-package :redis)
 
-(defvar *connection* nil "The current CONNECTION object.")
+(defvar *connection* nil "The current Redis connection.")
 
-(defclass connection ()
+(defclass redis-connection ()
   ((host
     :initarg  :host
     :initform #(127 0 0 1)
@@ -21,39 +21,60 @@
    (stream
     :initform nil
     :accessor connection-stream))
-  (:documentation "Representation of a connection to Redis server."))
+  (:documentation "Representation of a Redis connection."))
 
-(defmethod connection-external-format ((connection connection))
+(defmethod connection-external-format ((connection redis-connection))
   (make-external-format (connection-encoding connection) :eol-style :crlf))
 
-(defmethod initialize-instance :after ((connection connection) &key)
+(defmethod initialize-instance :after ((connection redis-connection) &key)
   (open-connection connection))
   
 (defun open-connection (connection)
-  (handler-case (setf (connection-stream connection) (make-flexi-stream
-                                                      (socket-stream
-                                                       (socket-connect (connection-host connection)
-                                                                       (connection-port connection)
-                                                                       :element-type 'octet))
-                                                      :external-format (connection-external-format connection)
-                                                      :element-type 'octet))
+  "Connect a connection object."
+  (handler-case
+      (setf (connection-stream connection)
+            (make-flexi-stream
+             (socket-stream
+              (socket-connect (connection-host connection)
+                              (connection-port connection)
+                              :element-type 'octet))
+             :external-format (connection-external-format connection)
+             :element-type 'octet))
     ((or socket-error stream-error) (e)
       (restart-case (error (wrap-connection-error e))
         (:reconnect ()
           :report "Try to reconnect."
           (open-connection connection))))))
 
-(defun connection-open-p (connection)
+(defun open-connection-p (connection)
+  "Is the given connection object connected?"
   (let ((stream (connection-stream connection)))
     (and stream (open-stream-p stream))))
 
 (defun close-connection (connection)
-  (when (connection-open-p connection)
+  "Disconnect a connection object."
+  (when (open-connection-p connection)
     (close (connection-stream connection))))
 
+(defun ensure-connection (connection)
+  "Used to make sure that a connection object is connected before
+doing anything with it."
+  (unless connection
+    (error "No Redis connection specified."))
+  (unless (open-connection-p connection)
+    (restart-case (error 'redis-connection-error
+                         :message "Connection to Redis server lost.")
+      (:reconnect ()
+        :report "Try to reconnect."
+        (open-connection connection)))))
+
 (defmacro with-reconnect-restart (connection &body body)
+  "When, inside BODY, an error occurs that breaks the connection stream,
+a condition of type REDIS-CONNECTION-ERROR is raised offering
+a :reconnect restart."
   (with-unique-names (=connection= =body=)
     `(let ((,=connection= ,connection))
+       (ensure-connection ,=connection=)
        (labels ((,=body= ()
                   (handler-case (progn ,@body)
                     ((or socket-error stream-error) (e)
@@ -64,15 +85,25 @@
                           (,=body=)))))))
          (,=body=)))))
 
-(defmacro with-connection ((&key (host #(127 0 0 1)) (port 6379) (encoding :utf-8)) &body body)
-  `(let ((*connection* (make-instance 'connection :host ,host :port ,port :encoding ,encoding)))
+(defmacro with-connection ((&key (host #(127 0 0 1))
+                                 (port 6379)
+                                 (encoding :utf-8))
+                           &body body)
+  "Evaluate BODY with the current connection bound to a new connection
+specified by HOST, PORT, and ENCODING arguments."
+  `(let ((*connection* (make-instance 'redis-connection
+                                      :host ,host
+                                      :port ,port
+                                      :encoding ,encoding)))
      (unwind-protect (progn ,@body)
        (close-connection *connection*))))
 
 (defun connected-p ()
-  (and *connection* (connection-open-p *connection*)))
+  "Is the current connection to Redis server still open?"
+  (and *connection* (open-connection-p *connection*)))
 
 (defun connect (&key (host #(127 0 0 1)) (port 6379) (encoding :utf-8))
+  "Connect to Redis server."
   (when (connected-p)
     (restart-case (error "A connection to Redis server is already established.")
       (:leave   ()
@@ -81,9 +112,13 @@
       (:replace ()
         :report "Replace it with a new connection."
         (disconnect))))
-  (setf *connection* (make-instance 'connection :host host :port port :encoding encoding)))
+  (setf *connection* (make-instance 'redis-connection
+                                    :host host
+                                    :port port
+                                    :encoding encoding)))
 
 (defun disconnect ()
+  "Disconnect from Redis server."
   (when (connected-p)
     (close-connection *connection*))
   (setf *connection* nil))
@@ -118,22 +153,21 @@ signal virtually all Redis-related errors."))
 
 (define-condition redis-connection-error (redis-error)
   ()
-  (:documentation "Conditions of this type are signaled when
-errors occur that break the connection stream.  They offer a
-:reconnect restart."))
+  (:documentation "Conditions of this type are signaled when errors
+occur that break the connection stream.  They offer a :reconnect
+restart."))
 
 (define-condition redis-error-reply (redis-error)
   ()
-  (:documentation "Raised when an error reply is received from the
-Redis server."))
+  (:documentation "Raised when an error reply is received from Redis
+server."))
 
 (define-condition redis-bad-reply (redis-error)
   ()
   (:documentation "Raised when a Redis protocol error is detected."))
 
 (defun wrap-connection-error (e)
-  (make-instance 'redis-connection-error
-                 :message (princ-to-string e)))
+  (make-instance 'redis-connection-error :message (princ-to-string e)))
 
 ;; outgoing
 
@@ -198,7 +232,7 @@ Redis server"))
 (eval-always
   (defmacro def-expect-method (type &body body)
     "Define a specialized EXPECT method"
-    (with-gensyms (line char)
+    (with-unique-names (line char)
       `(defmethod expect ((type (eql ,type)))
          ,(format nil "Process output of type ~a.
 A variable REPLY is bound to the output, recieved from the socket."
@@ -209,11 +243,11 @@ A variable REPLY is bound to the output, recieved from the socket."
            (when *echo-p* (format *echo-stream* "S: ~A~%" ,line))
            (case ,char
              ((#\-)
-              (error 'redis-bad-reply :message reply))
+              (error 'redis-error-reply :message reply))
              ((#\+ #\: #\$ #\*)
               (progn ,@body))
              (otherwise
-              (error 'redis-protocol-error
+              (error 'redis-bad-reply
                      :message (format nil
                                       "Received ~C as an initial reply byte." ,char)))))))))
 
@@ -240,10 +274,11 @@ A variable REPLY is bound to the output, recieved from the socket."
   (let ((size (parse-integer reply)))
     (if (= size -1)
         nil
-        (let ((octets (make-array size :element-type 'octet)))
-          (read-sequence octets (connection-stream *connection*))
-          (read-byte (connection-stream *connection*))    ; #\Return
-          (read-byte (connection-stream *connection*))    ; #\Linefeed
+        (let ((octets (make-array size :element-type 'octet))
+              (stream (connection-stream *connection*)))
+          (read-sequence octets stream)
+          (read-byte stream)    ; #\Return
+          (read-byte stream)    ; #\Linefeed
           (let ((string (octets-to-string octets
                                           :external-format (connection-external-format *connection*))))
             (when *echo-p* (format *echo-stream* "S: ~A~%" string))
