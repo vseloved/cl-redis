@@ -97,7 +97,7 @@
     (check string= "none"    (red-type "ю"))
     (check string= "string"  (red-type "z"))
     (check string= "string"  (red-type "зед"))
-    (check equal '("y" "ігрек" "z" "зед")  (red-keys "*"))
+    (check equal '("ігрек")  (red-keys "і*"))
     (check true              (red-rename "z" "a"))
     (check true              (red-rename "зед" "а"))
     (check string= "3"       (red-get "a"))
@@ -245,7 +245,7 @@
     (check null              (red-exists "k3"))
     (check null              (red-exists "ка3"))
     (check true              (red-msetnx "k4" "v4" "k5" "v5"))
-    (check true              (red-msetnx "ка4" "ва4" "ка5" "ве5"))
+    (check true              (red-msetnx "ка4" "ве4" "ка5" "ве5"))
     (check equal '("v1" "v2" "v4" "v5") (red-mget "k1" "k2" "k4" "k5"))
     (check equal '("ве1" "ве2" "ве4" "ве5") (red-mget "ка1" "ка2" "ка4" "ка5"))
     (check true              (red-mset "k1" "w1" "k2" "v2"))
@@ -340,18 +340,18 @@
 (defun run-tests ()
   (terpri)
   (princ "Runnning CL-REDIS tests... ")
-  (connect)
-  (princ (if (every (lambda (rez)
-                      (and-it (mklist rez)
-                              (every #'true it)))
-                    (run-test #+nil tell
-                              #+nil expect
-                              commands
-                              sort
-                              z-commands))
-             "OK"
-             (format nil "some tests failed. See log file for details: ~a"
-                     *logg-out*)))
+  (with-connection ()
+    (princ (if (every (lambda (rez)
+                        (and-it (mklist rez)
+                                (every #'true it)))
+                      (run-test #+nil tell
+                                #+nil expect
+                                commands
+                                sort
+                                z-commands))
+               "OK"
+               (format nil "some tests failed. See log file for details: ~a"
+                       *logg-out*))))
   (terpri)
   (terpri))
       

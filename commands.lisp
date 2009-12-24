@@ -146,7 +146,6 @@ from the List at key."
 at key."
   :inline :bulk)
 
-
 (def-cmd SADD (key member)
   "Add the specified member to the Set value at key."
   :bulk :boolean)

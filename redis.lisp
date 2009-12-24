@@ -218,7 +218,7 @@ In case of :bulk command last argument should be a <_:type sequence />."))
 
 (defmethod tell ((type (eql :multi)) cmd &rest args)
   (let ((bulks (cons (string cmd) args)))
-    (write-redis-line "*~A" (byte-length bulks))
+    (write-redis-line "*~A" (length bulks))
     (dolist (bulk bulks)
       (write-redis-line "$~A" (byte-length bulk))
       (write-redis-line "~A" bulk))))
