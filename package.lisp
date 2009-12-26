@@ -19,7 +19,6 @@
            #:def-cmd
            #:def-expect-method
            #:expect
-           #:redis-connect
            #:tell
 
            #:redis-error

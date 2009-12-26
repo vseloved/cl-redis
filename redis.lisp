@@ -81,7 +81,7 @@ set the stream of CONNECTION to the associated stream."
 (defun close-connection (connection)
   "Close the stream of CONNECTION."
   (when (open-connection-p connection)
-    (close (connection-stream connection))))
+    (ignore-errors (close (connection-stream connection)))))
 
 (defun ensure-connection (connection)
   "Ensure that CONNECTION is open before doing anything with it."
@@ -150,14 +150,20 @@ echoing.")
 
 (defvar *echo-stream* *standard-output*
   "A stream to which the server-client communication will be echoed
-for debugging purposes.  The default is *standard-output*.")
+for debugging purposes.  The default is *STANDARD-OUTPUT*.")
 
 ;; utils
 
 (defun byte-length (string)
-  (octet-length string :external-format (connection-external-format *connection*)))
+  "Return the length of STRING if encoded using the external format
+of the current connection."
+  (octet-length string
+                :external-format (connection-external-format *connection*)))
 
 (defun write-redis-line (fmt &rest args)
+  "Write a CRLF-terminated string formatted according to the given control
+string FMT and its arguments ARGS to the stream of the current connection.
+If *ECHOP-P* is not NIL, write that string to *ECHO-STREAM*, too."
   (let ((string (apply #'format nil fmt args)))
     (when *echo-p* (format *echo-stream* "C: ~A~%" string))
     (write-line string (connection-stream *connection*))))
@@ -202,7 +208,7 @@ server."))
 TYPE must be one of the keywords :INLINE, :BULK, or :MULTI.  Otherwise an
 error will be signalled.  CMD is the command name (a string or a symbol),
 and ARGS are its arguments (keyword arguments are also supported).  In the
-case of a :bulk command the last argument must be a string."))
+case of a :BULK command the last argument must be a string."))
 
 (defmethod tell :after (type cmd &rest args)
   (declare (ignore type cmd args))
@@ -212,14 +218,14 @@ case of a :bulk command the last argument must be a string."))
   (declare (ignore cmd args))
   (error "Commands of type ~A are not supported." type))
 
+(defmethod tell ((type (eql :inline)) cmd &rest args)
+  (write-redis-line "~A~{ ~A~}" cmd args))
+
 (defmethod tell ((type (eql :bulk)) cmd &rest args)
   (multiple-value-bind (args bulk) (butlast2 args)
     (check-type bulk string)
     (write-redis-line "~A~{ ~A~} ~A" cmd args (byte-length bulk))
     (write-redis-line "~A" bulk)))
-
-(defmethod tell ((type (eql :inline)) cmd &rest args)
-  (write-redis-line "~A~{ ~A~}" cmd args))
 
 (defmethod tell ((type (eql :inline)) (cmd (eql 'SORT)) &rest args)
   (flet ((send-request (key &key by get desc alpha start count)
@@ -229,21 +235,6 @@ case of a :bulk command the last argument must be a string."))
            (write-redis-line "SORT ~a~:[~; BY ~:*~a~]~{ GET ~a~}~:[~; DESC~]~:[~; ALPHA~]~:[~; LIMIT ~:*~a ~a~]"
                              key by (mklist get) desc alpha start count)))
     (apply #'send-request args)))
-
-;; (defmethod tell ((type (eql :inline)) (cmd (eql 'SORT)) &rest args)
-;;   (destructuring-bind (key . options) args
-;;     (let ((by    (getf options :by))
-;;           (get   (mklist (getf options :get)))
-;;           (desc  (getf options :desc))
-;;           (alpha (getf options :alpha))
-;;           (start (getf options :start))
-;;           (count (getf options :count)))
-;;       (assert (or (and start count)
-;;                   (and (null start) (null count)))
-;;               ()
-;;               "START and COUNT must be either both NIL or both non-NIL.")
-;;       (write-redis-line "SORT ~a~:[~; BY ~:*~a~]~{ GET ~a~}~:[~; DESC~]~:[~; ALPHA~]~:[~; LIMIT ~:*~a ~a~]"
-;;                         key by get desc alpha start count))))
 
 (defmethod tell ((type (eql :multi)) cmd &rest args)
   (let ((bulks (cons (string cmd) args)))
@@ -255,17 +246,17 @@ case of a :bulk command the last argument must be a string."))
 ;; ingoing
 
 (defgeneric expect (type)
-  (:documentation "Process output of the specified <_:arg type /> from the ~
-Redis server"))
+  (:documentation "Receive and process the reply of the given type
+from Redis server."))
 
 (eval-always
   (defmacro def-expect-method (type &body body)
-    "Define a specialized EXPECT method"
+    "Define a specialized EXPECT method.  BODY may refer to the
+variable REPLY, which is bound to the reply recieved from Redis
+server with the first character removed."
     (with-unique-names (line char)
       `(defmethod expect ((type (eql ,type)))
-         ,(format nil "Process output of type ~a.
-A variable REPLY is bound to the output, recieved from the socket."
-                  type)
+         ,(format nil "Receive and process the reply of type ~a." type)
          (let* ((,line (read-line (connection-stream *connection*)))
                 (,char (char ,line 0))
                 (reply (subseq ,line 1)))
@@ -277,7 +268,7 @@ A variable REPLY is bound to the output, recieved from the socket."
               (progn ,@body))
              (otherwise
               (error 'redis-bad-reply
-                     :message (format nil "Received ~C as an initial reply byte." ,char)))))))))
+                     :message (format nil "Received ~C as the initial reply byte." ,char)))))))))
 
 (def-expect-method :ok
     (assert (string= reply "OK"))
@@ -319,27 +310,28 @@ A variable REPLY is bound to the output, recieved from the socket."
         (loop repeat n collect (expect :bulk)))))
 
 (defmethod expect ((type (eql :end)))
+  "Used for commands QUIT and SHUTDOWN."
   ;; do nothing
   )
 
 (defmethod expect ((type (eql :list)))
+  "Used to make Redis KEYS command return a list of strings (keys)
+rather than a single string."
   (cl-ppcre:split " " (expect :bulk)))
     
 ;; command definition
 
 (defparameter *cmd-prefix* 'red
-  "Prefix for functions, implementing Redis commands")
+  "Prefix for functions names that implement Redis commands.")
 
 (defmacro def-cmd (cmd (&rest args) docstring cmd-type reply-type)
-  "Define and <_:fun export /> a function for processing the Redis ~
-command <_:arg cmd /> with the name <_:var *cmd-redix* />-<_:arg cmd />.
-<_:arg Cmd-type /> and <_:arg reply-type /> are the types of ~
-respectedly underlying <_:fun tell /> and <_:fun expect />, ~
-<_: args /> is the <_:fun tell /> arguments, <_:arg docstring /> ~
-is the function's doc itself."
+  "Define and export a function with the name <*CMD-REDIX*>-<CMD> for
+processing a Redis command CMD.  Here CMD-TYPE and REPLY-TYPE are the
+command and reply types respectively, ARGS are the command arguments,
+and DOCSTRING is the command documentation string."
   (let ((cmd-name (intern (format nil "~a-~a" *cmd-prefix* cmd))))
     `(progn
-       (defun ,cmd-name (,@args)
+       (defun ,cmd-name ,args
          ,docstring
          (with-reconnect-restart *connection*
            ,(if-it (position '&rest args)

@@ -41,7 +41,8 @@
   :multi :ok)
 
 (def-cmd MSETNX (&rest key-value-plist)
-  "Set multiple keys to multiple values in a single atomic operation if none of the keys already exist."
+  "Set multiple keys to multiple values in a single atomic operation
+if none of the keys already exist."
   :multi :boolean)
 
 (def-cmd INCR (key)
@@ -81,13 +82,13 @@
   :inline :inline)
 
 (def-cmd RENAME (oldname newname)
-  "Rename the old key in the new one, destroing the newname key ~
-if it already exists."
+  "Rename the old key in the new one, destroing the newname key if it
+already exists."
   :inline :ok)
 
 (def-cmd RENAMENX (oldname newname)
-  "Rename the old key in the new one, if the newname key ~
-does not already exist."
+  "Rename the old key in the new one, if the newname key does not
+already exist."
  :inline :boolean)
   
 (def-cmd DBSIZE ()
@@ -127,23 +128,20 @@ does not already exist."
   :inline :bulk)
 
 (def-cmd LSET (key index value)
-  "Set a new value as the element at index position of the List ~
-at key."
+  "Set a new value as the element at index position of the List at key."
   :bulk :ok)
 
 (def-cmd LREM (key count value)
-  "Remove the first-N, last-N, or all the elements matching value ~
-from the List at key."
+  "Remove the first-N, last-N, or all the elements matching value from
+the List at key."
   :bulk :integer)
 
 (def-cmd LPOP (key)
-  "Return and remove (atomically) the first element of the List~
- at key."
+  "Return and remove (atomically) the first element of the List at key."
   :inline :bulk)
 
 (def-cmd RPOP (key)
-  "Return and remove (atomically) the last element of the List ~
-at key."
+  "Return and remove (atomically) the last element of the List at key."
   :inline :bulk)
 
 (def-cmd SADD (key member)
@@ -155,8 +153,7 @@ at key."
   :bulk :boolean)
 
 (def-cmd SPOP (key)
-  "Remove and return (pop) a random element from the Set value ~
-at key."
+  "Remove and return (pop) a random element from the Set value at key."
   :inline :bulk)
 
 (def-cmd SMOVE (srckey dstkey member)
@@ -164,8 +161,7 @@ at key."
   :bulk :boolean)
   
 (def-cmd SCARD (key)
-  "Return the number of elements (the cardinality) of the Set ~
-at key."
+  "Return the number of elements (the cardinality) of the Set at key."
   :inline :integer)
 
 (def-cmd SISMEMBER (key member)
@@ -173,33 +169,32 @@ at key."
   :bulk :boolean)
 
 (def-cmd SINTER (&rest keys)
-  "Return the intersection between the Sets stored ~
-at key1, key2, ..., keyN."
+  "Return the intersection between the Sets stored at key1, key2, ...,
+keyN."
   :inline :multi)
 
 (def-cmd SINTERSTORE (dstkey &rest keys)
-  "Compute the intersection between the Sets stored ~
-at key1, key2, ..., keyN, and store the resulting Set at dstkey."
+  "Compute the intersection between the Sets stored at key1, key2,
+..., keyN, and store the resulting Set at dstkey."
   :inline :integer)
 
 (def-cmd SUNION (&rest keys)
-  "Return the union between the Sets stored ~
-at key1, key2, ..., keyN."
+  "Return the union between the Sets stored at key1, key2, ..., keyN."
   :inline :multi)
 
 (def-cmd SUNIONSTORE (dstkey &rest keys)
-  "Compute the union between the Sets stored ~
-at key1, key2, ..., keyN, and store the resulting Set at dstkey."
+  "Compute the union between the Sets stored at key1, key2, ..., keyN,
+and store the resulting Set at dstkey."
   :inline :integer)
 
 (def-cmd SDIFF (&rest keys)
-  "Return the difference between the Set stored ~
-at key1 and all the Sets key2, ..., keyN."
+  "Return the difference between the Set stored at key1 and all the
+Sets key2, ..., keyN."
   :inline :multi)
 
 (def-cmd SDIFFSTORE (dstkey &rest keys)
-  "Compute the difference between the Set key1 and ~
-all the Sets key2, ..., keyN, and store the resulting Set at dstkey."
+  "Compute the difference between the Set key1 and all the Sets key2,
+..., keyN, and store the resulting Set at dstkey."
   :inline :integer)
 
 (def-cmd SMEMBERS (key)
@@ -207,10 +202,9 @@ all the Sets key2, ..., keyN, and store the resulting Set at dstkey."
   :inline :multi)
 
 (def-cmd ZADD (key score member)
-  "Add the specified member to the Set value at key or ~
-update the score if it already exist.
-If nil is returned, the element already existed in the set. Just the score ~
-was updated."
+  "Add the specified member to the Set value at key or update the
+score if it already exist.  If nil is returned, the element already
+existed in the set.  Just the score was updated."
   :bulk :boolean)
 
 (def-cmd ZREM (key member)
@@ -222,29 +216,28 @@ was updated."
   :inline :multi)
 
 (def-cmd ZREVRANGE (key start end)
-  "Return a range of elements from the sorted set at key, ~
-exactly like ZRANGE, but the sorted set is ordered in traversed in reverse ~
-order, from the greatest to the smallest score."
+  "Return a range of elements from the sorted set at key, exactly like
+ZRANGE, but the sorted set is ordered in traversed in reverse order,
+from the greatest to the smallest score."
   :inline :multi)
 
 (def-cmd ZRANGEBYSCORE (key min max)
-  "Return all the elements with score >= min and ~
-score <= max (a range query) from the sorted set."
+  "Return all the elements with score >= min and score <= max (a range
+query) from the sorted set."
   :inline :multi)
 
 (def-cmd ZCARD (key)
-  "Return the cardinality (number of elements) of the sorted set ~
-at key."
+  "Return the cardinality (number of elements) of the sorted set at key."
   :inline :integer)
 
 (def-cmd ZSCORE (key element)
-  "Return the score associated with the specified element of the ~
+  "Return the score associated with the specified element of the
 sorted set at key."
   :bulk :bulk)
 
 (def-cmd ZREMRANGEBYSCORE (key min max)
-  "Remove all the elements with score >= min and ~
-score <= max from the sorted set."
+  "Remove all the elements with score >= min and score <= max from the
+sorted set."
   :inline :integer)
 
 (def-cmd SELECT (index)
@@ -252,8 +245,8 @@ score <= max from the sorted set."
   :inline :ok)
 
 (def-cmd MOVE (key dbindex)
-  "Move the key from the currently selected DB to ~
-the DB having as index dbindex."
+  "Move the key from the currently selected DB to the DB having as
+index dbindex."
   :inline :ok)
 
 (def-cmd FLUSHDB ()
@@ -265,13 +258,13 @@ the DB having as index dbindex."
   :inline :ok)
 
 (def-cmd SORT (key &rest args
-                   &key by     ; pattern
-                   start  
-                   count  
-                   get    ; pattern or a list of patterns
-                   desc   ; should sort be descending? default is NIL
-                   alpha  ; should sort be lexicographical? default is NIL
-                   )
+                   &key  by     ; A pattern.
+                         start  
+                         count  
+                         get    ; A pattern or a list of patterns.
+                         desc   ; Should sort be descending? The default is NIL.
+                         alpha  ; Should sort be lexicographical? The default is NIL.
+                         )
   "Sort a Set or a List accordingly to the specified parameters."
   :inline :multi)
 
@@ -284,8 +277,8 @@ the DB having as index dbindex."
   :inline :ok)
 
 (def-cmd LASTSAVE ()
-  "Return the UNIX time stamp of the last successfully ~
-saving of the dataset on disk."
+  "Return the UNIX time stamp of the last successfully saving of the
+dataset on disk."
   :inline :integer)
 
 (def-cmd SHUTDOWN ()
