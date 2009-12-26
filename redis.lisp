@@ -24,14 +24,45 @@
   (:documentation "Representation of a Redis connection."))
 
 (defmethod connection-external-format ((connection redis-connection))
+  "Return the external format of CONNECTION based on its encoding."
   (make-external-format (connection-encoding connection) :eol-style :crlf))
+
+(defmacro signal-connection-error-with-reconnect-restart (&key message comment restart)
+  "Signal the condition of type REDIS-CONNECTION-ERROR denoted by the given
+MESSAGE and COMMENT offering a :reconnect restart given by RESTART."
+  `(restart-case (error 'redis-connection-error
+                        :message ,message
+                        :comment ,comment)
+     (:reconnect ()
+       :report "Try to reconnect."
+       ,restart)))
+
+(defmacro provide-reconnect-restart (expression &body body)
+  "When, during the execution of EXPRESSION, an error occurs that can break
+the connection stream, a condition of type REDIS-CONNECTION-ERROR is raised
+offering a :reconnect restart whose body is given by BODY."
+  (with-unique-names (err)
+    `(handler-case ,expression
+       (connection-refused-error (,err)
+         ;; Errors of this type commonly occur when there is no Redis server
+         ;; running, or when one tries to connect to the wrong host or port.
+         ;; We anticipate this by providing a helpful comment.
+         (signal-connection-error-with-reconnect-restart
+          :message ,err
+          :comment "Make sure Redis server is running and check your connection parameters."
+          :restart (progn ,@body)))
+       ((or socket-error stream-error) (,err)
+         (signal-connection-error-with-reconnect-restart
+          :message ,err
+          :restart (progn ,@body))))))
 
 (defmethod initialize-instance :after ((connection redis-connection) &key)
   (open-connection connection))
   
 (defun open-connection (connection)
-  "Connect a connection object."
-  (handler-case
+  "Create a socket connection to the host and port of CONNECTION and
+set the stream of CONNECTION to the associated stream."
+  (provide-reconnect-restart
       (setf (connection-stream connection)
             (make-flexi-stream
              (socket-stream
@@ -40,49 +71,38 @@
                               :element-type 'octet))
              :external-format (connection-external-format connection)
              :element-type 'octet))
-    ((or socket-error stream-error) (e)
-      (restart-case (error (wrap-connection-error e))
-        (:reconnect ()
-          :report "Try to reconnect."
-          (open-connection connection))))))
+    (open-connection connection)))
 
 (defun open-connection-p (connection)
-  "Is the given connection object connected?"
+  "Is the stream of CONNECTION open?"
   (let ((stream (connection-stream connection)))
     (and stream (open-stream-p stream))))
 
 (defun close-connection (connection)
-  "Disconnect a connection object."
+  "Close the stream of CONNECTION."
   (when (open-connection-p connection)
     (close (connection-stream connection))))
 
 (defun ensure-connection (connection)
-  "Used to make sure that a connection object is connected before
-doing anything with it."
+  "Ensure that CONNECTION is open before doing anything with it."
   (unless connection
     (error "No Redis connection specified."))
   (unless (open-connection-p connection)
-    (restart-case (error 'redis-connection-error
-                         :message "Connection to Redis server lost.")
-      (:reconnect ()
-        :report "Try to reconnect."
-        (open-connection connection)))))
+    (signal-connection-error-with-reconnect-restart
+     :message "Connection to Redis server lost."
+     :restart (open-connection connection))))
 
 (defmacro with-reconnect-restart (connection &body body)
-  "When, inside BODY, an error occurs that breaks the connection stream,
-a condition of type REDIS-CONNECTION-ERROR is raised offering
-a :reconnect restart."
+  "When, inside BODY, an error occurs that breaks the stream of CONNECTION,
+a condition of type REDIS-CONNECTION-ERROR is raised offering a :reconnect
+restart."
   (with-unique-names (=connection= =body=)
     `(let ((,=connection= ,connection))
        (ensure-connection ,=connection=)
        (labels ((,=body= ()
-                  (handler-case (progn ,@body)
-                    ((or socket-error stream-error) (e)
-                      (restart-case (error (wrap-connection-error e))
-                        (:reconnect ()
-                          :report "Try to reconnect."
-                          (open-connection ,=connection=)
-                          (,=body=)))))))
+                  (provide-reconnect-restart (progn ,@body)
+                    (open-connection ,=connection=)
+                    (,=body=))))
          (,=body=)))))
 
 (defmacro with-connection ((&key (host #(127 0 0 1))
@@ -90,7 +110,7 @@ a :reconnect restart."
                                  (encoding :utf-8))
                            &body body)
   "Evaluate BODY with the current connection bound to a new connection
-specified by HOST, PORT, and ENCODING arguments."
+specified by the given HOST, PORT, and ENCODING."
   `(let ((*connection* (make-instance 'redis-connection
                                       :host ,host
                                       :port ,port
@@ -145,9 +165,18 @@ for debugging purposes.  The default is *standard-output*.")
 ;; conditions
 
 (define-condition redis-error (error)
-  ((message :initarg :message :reader redis-error-message))
+  ((message
+    :initarg  :message
+    :reader   redis-error-message)
+   (comment
+    :initform nil
+    :initarg  :comment
+    :reader   redis-error-comment))
   (:report (lambda (e stream)
-             (format stream "Redis error: ~A" (redis-error-message e))))
+             (format stream
+                     "Redis error: ~A~:[~;~2&~:*~A~]"
+                     (redis-error-message e)
+                     (redis-error-comment e))))
   (:documentation "This is the condition type that will be used to
 signal virtually all Redis-related errors."))
 
@@ -166,18 +195,14 @@ server."))
   ()
   (:documentation "Raised when a Redis protocol error is detected."))
 
-(defun wrap-connection-error (e)
-  (make-instance 'redis-connection-error :message (princ-to-string e)))
-
 ;; outgoing
 
 (defgeneric tell (type cmd &rest args)
-  (:documentation
-   "Send command to the server through a socket connection, that might be down.
-<_:arg TYPE /> is for now :inline, :bulk, or :multi (otherwise error will be signalled).
-<_:arg CMD /> is the command string, <_:arg ARGS /> are arguments. (Keyword ~
-arguments are also supported).
-In case of :bulk command last argument should be a <_:type sequence />."))
+  (:documentation "Send a command to Redis server over a socket connection.
+TYPE must be one of the keywords :INLINE, :BULK, or :MULTI.  Otherwise an
+error will be signalled.  CMD is the command name (a string or a symbol),
+and ARGS are its arguments (keyword arguments are also supported).  In the
+case of a :bulk command the last argument must be a string."))
 
 (defmethod tell :after (type cmd &rest args)
   (declare (ignore type cmd args))
@@ -185,36 +210,40 @@ In case of :bulk command last argument should be a <_:type sequence />."))
 
 (defmethod tell (type cmd &rest args)
   (declare (ignore cmd args))
-  (error "Type ~A commands are not supported." type))
+  (error "Commands of type ~A are not supported." type))
 
 (defmethod tell ((type (eql :bulk)) cmd &rest args)
   (multiple-value-bind (args bulk) (butlast2 args)
-    (assert (and bulk (typep bulk 'string))
-            (bulk)
-            "Bulk Redis data must be a string")
+    (check-type bulk string)
     (write-redis-line "~A~{ ~A~} ~A" cmd args (byte-length bulk))
     (write-redis-line "~A" bulk)))
 
 (defmethod tell ((type (eql :inline)) cmd &rest args)
-  (dolist (arg args)
-    (assert (not (blankp arg)) () "Redis argument must be non-empty"))
   (write-redis-line "~A~{ ~A~}" cmd args))
 
 (defmethod tell ((type (eql :inline)) (cmd (eql 'SORT)) &rest args)
-  (destructuring-bind (key . options) args
-    (assert (not (blankp key)) () "Redis argument must be non-empty")
-    (let ((by    (getf options :by))
-          (get   (mklist (getf options :get)))
-          (desc  (getf options :desc))
-          (alpha (getf options :alpha))
-          (start (getf options :start))
-          (count (getf options :count)))
-      (assert (or (and start count)
-                  (and (null start) (null count)))
-              ()
-              "START and END must be either both NIL or both non-NIL.")
-      (write-redis-line "SORT ~a~:[~; BY ~:*~a~]~{ GET ~a~}~:[~; DESC~]~:[~; ALPHA~]~:[~; LIMIT ~:*~a ~a~]"
-                        key by get desc alpha start count))))
+  (flet ((send-request (key &key by get desc alpha start count)
+           (unless (or (and start count)
+                       (and (null start) (null count)))
+             (error "START and COUNT must be either both NIL or both non-NIL."))
+           (write-redis-line "SORT ~a~:[~; BY ~:*~a~]~{ GET ~a~}~:[~; DESC~]~:[~; ALPHA~]~:[~; LIMIT ~:*~a ~a~]"
+                             key by (mklist get) desc alpha start count)))
+    (apply #'send-request args)))
+
+;; (defmethod tell ((type (eql :inline)) (cmd (eql 'SORT)) &rest args)
+;;   (destructuring-bind (key . options) args
+;;     (let ((by    (getf options :by))
+;;           (get   (mklist (getf options :get)))
+;;           (desc  (getf options :desc))
+;;           (alpha (getf options :alpha))
+;;           (start (getf options :start))
+;;           (count (getf options :count)))
+;;       (assert (or (and start count)
+;;                   (and (null start) (null count)))
+;;               ()
+;;               "START and COUNT must be either both NIL or both non-NIL.")
+;;       (write-redis-line "SORT ~a~:[~; BY ~:*~a~]~{ GET ~a~}~:[~; DESC~]~:[~; ALPHA~]~:[~; LIMIT ~:*~a ~a~]"
+;;                         key by get desc alpha start count))))
 
 (defmethod tell ((type (eql :multi)) cmd &rest args)
   (let ((bulks (cons (string cmd) args)))
@@ -248,8 +277,7 @@ A variable REPLY is bound to the output, recieved from the socket."
               (progn ,@body))
              (otherwise
               (error 'redis-bad-reply
-                     :message (format nil
-                                      "Received ~C as an initial reply byte." ,char)))))))))
+                     :message (format nil "Received ~C as an initial reply byte." ,char)))))))))
 
 (def-expect-method :ok
     (assert (string= reply "OK"))
