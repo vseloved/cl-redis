@@ -260,7 +260,7 @@ index dbindex."
 (def-cmd SORT (key &rest args
                    &key  by     ; A pattern.
                          start  
-                         count  
+                         end
                          get    ; A pattern or a list of patterns.
                          desc   ; Should sort be descending? The default is NIL.
                          alpha  ; Should sort be lexicographical? The default is NIL.
@@ -274,7 +274,7 @@ index dbindex."
 
 (def-cmd BGSAVE ()
   "Asynchronously save the DB on disk."
-  :inline :ok)
+  :inline :inline)
 
 (def-cmd LASTSAVE ()
   "Return the UNIX time stamp of the last successfully saving of the
