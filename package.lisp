@@ -4,21 +4,25 @@
 (in-package :cl-user)
 
 (defpackage :redis
-  (:use :common-lisp :rutils.user :rutils.short :usocket
+  (:use :common-lisp :rutils.user :rutils.short :usocket :flexi-streams
         #+:nuts :nuts)
-  (:export #:*redis-in*
-           #:*redis-host*
-           #:*redis-out*
-           #:*redis-port*
+  (:export #:connect
+           #:disconnect
+           #:connected-p
+           #:with-connection
+
+           #:*echo-p*
+           #:*echo-stream*
 
            #:*cmd-prefix*
 
            #:def-cmd
            #:def-expect-method
            #:expect
-           #:redis-connect
            #:tell
 
-           #:redis-error))
-
+           #:redis-error
+           #:redis-bad-reply
+           #:redis-error-reply
+           #:redis-connection-error)) 
 ;;; end
