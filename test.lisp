@@ -6,7 +6,7 @@
 (defpackage #:redis-test
   (:use :common-lisp :rutils.user :rutils.short #+:nuts :nuts
         :redis)
-  (:export #:run))
+  (:export #:run-tests))
 
 (in-package #:redis-test)
 
@@ -390,27 +390,27 @@ a b c")))
     (check equal '("e1" "e2") (red-zrange "set" 0 -1))
     (check equal '("елемент1" "елемент2") (red-zrange "множина" 0 -1))))
 
-(defun run-tests (&key debug)
-  (terpri)
-  (princ "Runnning CL-REDIS tests... ")
-  (setf *echo-p* debug)
-  (princ (if (every (lambda (rez)
-                      (and-it (mklist rez)
-                              (every (lambda (rez) (eq t rez))
-                                     it)))
-                    (run-test tell
-                              expect
-                              commands
-                              sort
-                              l-commands
-                              s-commands
-                              z-commands))
-             "OK"
-             (format nil "some tests failed. See log file for details: ~a"
-                     *log-out*)))
-  (terpri)
-  (terpri)
-  (values))
+(defun run-tests (&key echo-p)
+  (let ((*echo-p* echo-p))
+    (terpri)
+    (princ "Runnning CL-REDIS tests... ")
+    (princ (if (every (lambda (rez)
+                        (and-it (mklist rez)
+                                (every (lambda (rez) (eq t rez))
+                                       it)))
+                      (run-test tell
+                                expect
+                                commands
+                                sort
+                                l-commands
+                                s-commands
+                                z-commands))
+               "OK"
+               (format nil "some tests failed. See log file for details: ~a"
+                       *log-out*)))
+    (terpri)
+    (terpri)
+    (values)))
       
 
 ;;; end
