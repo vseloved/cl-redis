@@ -4,9 +4,13 @@
 (in-package :cl-user)
 
 (defpackage :redis
-  (:use :common-lisp :rutils.user :rutils.short :usocket :flexi-streams
+  (:use :common-lisp :rutils.usr
+        :usocket :flexi-streams
         #+:nuts :nuts)
-  (:export #:connect
+  (:export #:redis-connection
+           #:connection-external-format
+           
+           #:connect
            #:disconnect
            #:connected-p
            #:with-connection

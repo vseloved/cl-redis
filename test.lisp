@@ -10,49 +10,90 @@
 
 (in-package #:redis-test)
 
-#+nil  ;; TODO: make the proper isolated test, that will not touch maybe-connect
 (deftest tell ()
-  (check string=
-         (with-output-to-string (*redis-out*)
-           (tell :inline "PING"))
-         (format nil "PING~a" +rtlf+))
-  (check string=
-         (with-output-to-string (*redis-out*)
-           (tell :bulk "SET" "a" "123"))
-         (format nil "SET a 3~a123~a" +rtlf+ +rtlf+)))
+  (with-connection ()
+    (let ((*echo-p* t)
+          (*echo-stream* (make-string-output-stream)))
+      (list
+       (check string=
+              (progn (tell :inline 'ping)
+                     (get-output-stream-string *echo-stream*))
+              "C: PING
+")
+       (check string=
+              (progn (tell :inline 'sort "a" :start "1" :end "2")
+                     (get-output-stream-string *echo-stream*))
+              "C: SORT a LIMIT 1 2
+")
+       (check string=
+              (progn (tell :bulk 'set "a" "123")
+                     (get-output-stream-string *echo-stream*))
+              "C: SET a 3
+C: 123
+"))
+       (check string=
+              (progn (tell :multi 'mset "a" "123" "b" "456")
+                     (get-output-stream-string *echo-stream*))
+              "C: *5
+C: $4
+C: MSET
+C: $1
+C: a
+C: $3
+C: 123
+C: $1
+C: b
+C: $3
+C: 456
+"))))
 
-#+nil
 (defun expect-from-str (expected input)
-  (with-input-from-string (in (strcat input +rtlf+))
-    (let ((*redis-in* (make-two-way-stream in *redis-out*)))
-      (expect expected))))
+  (with-connection ()
+    (let ((ext-fmt (redis::connection-external-format redis::*connection*)))
+      (flexi-streams:with-input-from-sequence
+          (in (flexi-streams:string-to-octets
+               (strcat input "
+")
+               :external-format ext-fmt))
+        (setf in
+              (flexi-streams:make-flexi-stream
+               in
+               :external-format ext-fmt
+               :element-type 'flexi-streams:octet)
+              (redis::connection-stream redis::*connection*) in)
+        (expect expected)))))
 
-#+nil
 (deftest expect ()
   (check true            (expect-from-str :ok "+OK"))
   (check true            (expect-from-str :pong "+PONG"))
   (check string= "10$"   (expect-from-str :inline "+10$"))
   (check null            (expect-from-str :boolean "+0$"))
   (check = 10            (expect-from-str :integer "+10"))
-  (check string= "abc"   (expect-from-str :bulk (format nil "+3~aabc" +rtlf+)))
-  (check equal '("a" "") (expect-from-str :multi
-                                          (format nil "+2~a$1~aa~a$0~a"
-                                                  +rtlf+ +rtlf+ +rtlf+ +rtlf+)))
+  (check string= "abc"   (expect-from-str :bulk "+3
+abc"))
+  (check equal '("a" "") (expect-from-str :multi "*2
+$1
+a
+$0
+"))
   (check equal '("a" "b" "c")
-                         (expect-from-str :list
-                                          (format nil "+5~aa b c"
-                                                  +rtlf+))))
+                         (expect-from-str :list "+5
+a b c")))
 
 (defun find-s (seq str)
   (true (find str seq :test #'string=)))
 
+(defun null-diff (set1 set2)
+  (null (set-exclusive-or set1 set2 :test #'equal)))
+
 (defmacro with-test-db (&body body)
-  `(cumulative-and
-    (check true (red-ping))
-    (check true (red-select 15))
-    (check true (red-flushdb))
-    ,@body
-    (check true (red-flushdb))))
+  `(with-connection ()
+     (cumulative-and
+      (check true (red-ping))
+      (check true (red-select 15))
+      (check true (red-flushdb))
+      ,@body
+      (check true (red-flushdb)))))
 
 (deftest commands ()
   (with-test-db
@@ -97,13 +138,14 @@
     (check string= "none"    (red-type "ю"))
     (check string= "string"  (red-type "z"))
     (check string= "string"  (red-type "зед"))
-    (check equal '("ігрек")  (red-keys "і*"))
-    (check true              (red-rename "z" "a"))
-    (check true              (red-rename "зед" "а"))
-    (check string= "3"       (red-get "a"))
-    (check string= "3"       (red-get "а"))
-    (check null              (red-renamenx "y" "a"))
-    (check null              (red-renamenx "ігрек" "а"))
+    (check null-diff '("y" "ігрек" "z" "зед")
+                             (red-keys "*"))
+    (check true              (red-rename "z" "c"))
+    (check true              (red-rename "зед" "це"))
+    (check string= "3"       (red-get "c"))
+    (check string= "3"       (red-get "це"))
+    (check null              (red-renamenx "y" "c"))
+    (check null              (red-renamenx "ігрек" "це"))
     (check true              (red-renamenx "y" "b"))
     (check true              (red-renamenx "ігрек" "бе"))
     (check-errs              (red-renamenx "b" "b"))
@@ -117,11 +159,81 @@
                                     (red-get "бе")))
     (check null              (red-expire "b" 1))
     (check null              (red-expire "бе" 1))
-    (check find-s '("a" "а") (red-randomkey))
-    (check true              (red-expire "a" 600))
-    (check true              (red-expire "а" 600))
-    (check < 595             (red-ttl "a"))
-    (check < 595             (red-ttl "а"))
+    (check find-s '("c" "це")
+                             (red-randomkey))
+    (check true              (red-expire "c" 600))
+    (check true              (red-expire "це" 600))
+    (check < 595             (red-ttl "c"))
+    (check < 595             (red-ttl "це"))
+    (check true              (red-mset "k1" "v1" "k2" "v2")) 
+    (check true              (red-mset "ка1" "ве1" "ка2" "ве2")) 
+    (check null              (red-msetnx "k1" "w1" "k3" "v3"))
+    (check null              (red-msetnx "ка1" "дубльве1" "ка3" "ве3"))
+    (check null              (red-exists "k3"))
+    (check null              (red-exists "ка3"))
+    (check true              (red-msetnx "k4" "v4" "k5" "v5"))
+    (check true              (red-msetnx "ка4" "ве4" "ка5" "ве5"))
+    (check equal '("v1" "v2" "v4" "v5")
+                             (red-mget "k1" "k2" "k4" "k5"))
+    (check equal '("ве1" "ве2" "ве4" "ве5")
+                             (red-mget "ка1" "ка2" "ка4" "ка5"))
+    (check true              (red-mset "k1" "w1" "k2" "v2"))
+    (check true              (red-mset "ка1" "дубльве1" "ка2" "ве2"))
+    (check equal "w1"        (red-get "k1"))
+    (check equal "дубльве1"  (red-get "ка1"))
+    #+nil (red-move)
+    #+nil (red-flushall)
+    (check true              (red-save))
+    (check true              (red-bgsave))
+    (check integerp          (red-lastsave))
+    #+nil (red-shutdown)
+    #+nil (red-info)
+    #+nil (red-monitor)
+    #+nil (red-slaveof)))
+
+(deftest sort()
+  (with-test-db
+    (check true                    (red-rpush "numbers" "1"))
+    (check true                    (red-rpush "числа" "1"))
+    (check true                    (red-rpush "numbers" "2"))
+    (check true                    (red-rpush "числа" "2"))
+    (check true                    (red-rpush "numbers" "3"))
+    (check true                    (red-rpush "числа" "3"))
+    (check true                    (red-set "object_1" "o1"))
+    (check true                    (red-set "об'єкт_1" "о1"))
+    (check true                    (red-set "object_2" "o2"))
+    (check true                    (red-set "об'єкт_2" "о2"))
+    (check true                    (red-set "object_3" "o3"))
+    (check true                    (red-set "об'єкт_3" "о3"))
+    (check true                    (red-set "weight_1" "47"))
+    (check true                    (red-set "вага_1" "47"))    
+    (check true                    (red-set "weight_2" "13"))
+    (check true                    (red-set "вага_2" "13"))    
+    (check true                    (red-set "weight_3" "32"))
+    (check true                    (red-set "вага_3" "32"))
+    (check equal '("1" "2" "3")    (red-sort "numbers"))
+    (check equal '("1" "2" "3")    (red-sort "числа"))
+    (check equal '("2" "3")        (red-sort "numbers" :start 1 :end 2))
+    (check equal '("2" "3")        (red-sort "числа" :start 1 :end 2))
+    (check equal '("3" "2" "1")    (red-sort "numbers" :desc t))
+    (check equal '("2" "1")        (red-sort "numbers" :desc t :start 1 :end 2))
+    (check equal '("3" "2" "1")    (red-sort "числа" :desc t))
+    (check equal '("2" "1")        (red-sort "числа" :desc t :start 1 :end 2))
+    (check equal '("2" "3" "1")    (red-sort "numbers" :by "weight_*"))
+    (check equal '("2" "3" "1")    (red-sort "числа" :by "вага_*"))
+    (check equal '("o2" "o3" "o1") (red-sort "numbers" :by "weight_*"
+                                             :get "object_*"))
+    (check equal '("о2" "о3" "о1") (red-sort "числа" :by "вага_*"
+                                             :get "об'єкт_*"))
+    (check equal '("o1" "o3" "o2") (red-sort "numbers" :by "weight_*"
+                                             :get "object_*"
+                                             :desc t))
+    (check equal '("о1" "о3" "о2") (red-sort "числа" :by "вага_*"
+                                             :get "об'єкт_*"
+                                             :desc t))))
+
+(deftest l-commands ()
+  (with-test-db
     (check true              (red-rpush "l" "1"))
     (check true              (red-rpush "ел" "1"))
     (check true              (red-rpush "l" "1"))
@@ -177,7 +289,10 @@
     (check string= "4"       (red-rpop "l"))
     (check string= "4"       (red-rpop "ел"))
     (check-errs              (red-get "l"))
-    (check-errs              (red-get "ел"))
+    (check-errs              (red-get "ел"))))
+
+(deftest s-commands ()
+  (with-test-db
     (check true              (red-sadd "s" "1"))
     (check true              (red-sadd "ес" "1"))
     (check null              (red-sadd "s" "1"))
@@ -226,83 +341,21 @@
     (check true              (red-sinterstore "ес3" "ес" "ес2"))
     (check equal '("1")      (red-smembers "s3"))
     (check equal '("1")      (red-smembers "ес3"))
-    (check equal '("1" "2")  (red-sunion "s" "s2"))
-    (check equal '("1" "2")  (red-sunion "ес" "ес2"))
+    (check null-diff '("1" "2")
+                             (red-sunion "s" "s2"))
+    (check null-diff '("1" "2")
+                             (red-sunion "ес" "ес2"))
     (check true              (red-sunionstore "s4" "s" "s2"))
     (check true              (red-sunionstore "ес4" "ес" "ес2"))
-    (check equal '("1" "2")  (red-smembers "s4"))
+    (check null-diff '("1" "2")
+                             (red-smembers "s4"))
     (check equal '("1" "2")  (red-smembers "ес4"))
     (check equal '("2")      (red-sdiff "s4" "s3"))
     (check equal '("2")      (red-sdiff "ес4" "ес3"))
     (check true              (red-sdiffstore "s5" "s4" "s3"))
     (check true              (red-sdiffstore "ес5" "ес4" "ес3"))
     (check equal '("2")      (red-smembers "s5"))
-    (check equal '("2")      (red-smembers "ес5"))
-    (check true              (red-mset "k1" "v1" "k2" "v2")) 
-    (check true              (red-mset "ка1" "ве1" "ка2" "ве2")) 
-    (check null              (red-msetnx "k1" "w1" "k3" "v3"))
-    (check null              (red-msetnx "ка1" "дубльве1" "ка3" "ве3"))
-    (check null              (red-exists "k3"))
-    (check null              (red-exists "ка3"))
-    (check true              (red-msetnx "k4" "v4" "k5" "v5"))
-    (check true              (red-msetnx "ка4" "ве4" "ка5" "ве5"))
-    (check equal '("v1" "v2" "v4" "v5") (red-mget "k1" "k2" "k4" "k5"))
-    (check equal '("ве1" "ве2" "ве4" "ве5") (red-mget "ка1" "ка2" "ка4" "ка5"))
-    (check true              (red-mset "k1" "w1" "k2" "v2"))
-    (check true              (red-mset "ка1" "дубльве1" "ка2" "ве2"))
-    (check equal "w1"        (red-get "k1"))
-    (check equal "дубльве1"  (red-get "ка1"))
-    #+nil (red-move)
-    #+nil (red-flushall)
-    #+nil (red-sort)
-    (check true              (red-save))
-    (check true              (red-bgsave))
-    (check integerp          (red-lastsave))
-    #+nil (red-shutdown)
-    #+nil (red-info)
-    #+nil (red-monitor)
-    #+nil (red-slaveof)))
-
-(deftest sort()
-  (with-test-db
-    (check true                    (red-rpush "numbers" "1"))
-    (check true                    (red-rpush "числа" "1"))
-    (check true                    (red-rpush "numbers" "2"))
-    (check true                    (red-rpush "числа" "2"))
-    (check true                    (red-rpush "numbers" "3"))
-    (check true                    (red-rpush "числа" "3"))
-    (check true                    (red-set "object_1" "o1"))
-    (check true                    (red-set "об'єкт_1" "о1"))
-    (check true                    (red-set "object_2" "o2"))
-    (check true                    (red-set "об'єкт_2" "о2"))
-    (check true                    (red-set "object_3" "o3"))
-    (check true                    (red-set "об'єкт_3" "о3"))
-    (check true                    (red-set "weight_1" "47"))
-    (check true                    (red-set "вага_1" "47"))    
-    (check true                    (red-set "weight_2" "13"))
-    (check true                    (red-set "вага_2" "13"))    
-    (check true                    (red-set "weight_3" "32"))
-    (check true                    (red-set "вага_3" "32"))
-    (check equal '("1" "2" "3")    (red-sort "numbers"))
-    (check equal '("1" "2" "3")    (red-sort "числа"))
-    (check equal '("2" "3")        (red-sort "numbers" :start 1 :count 2))
-    (check equal '("2" "3")        (red-sort "числа" :start 1 :count 2))
-    (check equal '("3" "2" "1")    (red-sort "numbers" :desc t))
-    (check equal '("2" "1")        (red-sort "numbers" :desc t :start 1 :count 2))
-    (check equal '("3" "2" "1")    (red-sort "числа" :desc t))
-    (check equal '("2" "1")        (red-sort "числа" :desc t :start 1 :count 2))
-    (check equal '("2" "3" "1")    (red-sort "numbers" :by "weight_*"))
-    (check equal '("2" "3" "1")    (red-sort "числа" :by "вага_*"))
-    (check equal '("o2" "o3" "o1") (red-sort "numbers" :by "weight_*"
-                                             :get "object_*"))
-    (check equal '("о2" "о3" "о1") (red-sort "числа" :by "вага_*"
-                                             :get "об'єкт_*"))
-    (check equal '("o1" "o3" "o2") (red-sort "numbers" :by "weight_*"
-                                             :get "object_*"
-                                             :desc t))
-    (check equal '("о1" "о3" "о2") (red-sort "числа" :by "вага_*"
-                                             :get "об'єкт_*"
-                                             :desc t))))
+    (check equal '("2")      (red-smembers "ес5"))))
 
 (deftest z-commands ()
   (with-test-db
@@ -337,21 +390,27 @@
     (check equal '("e1" "e2") (red-zrange "set" 0 -1))
     (check equal '("елемент1" "елемент2") (red-zrange "множина" 0 -1))))
 
-(defun run ()
+(defun run-tests (&key debug)
   (terpri)
   (princ "Runnning CL-REDIS tests... ")
-  (with-connection ()
-    (princ (if (every #'true
-                      (run-tests #+nil tell
-                                 #+nil expect
-                                 commands
-                                 sort
-                                 z-commands))
-               "OK"
-               (format nil "some tests failed. See log file for details: ~a"
-                       *logg-out*))))
+  (setf *echo-p* debug)
+  (princ (if (every (lambda (rez)
+                      (and-it (mklist rez)
+                              (every (lambda (rez) (eq t rez))
+                                     it)))
+                    (run-test tell
+                              expect
+                              commands
+                              sort
+                              l-commands
+                              s-commands
+                              z-commands))
+             "OK"
+             (format nil "some tests failed. See log file for details: ~a"
+                     *log-out*)))
   (terpri)
-  (terpri))
+  (terpri)
+  (values))
       
 
 ;;; end

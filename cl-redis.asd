@@ -5,13 +5,14 @@
 
 (defsystem #:cl-redis
   :name "Redis client"
-  :version '(0 2 0)
+  :version '(1 0 0)
   :maintainer "Vsevolod Dyomkin <vseloved@gmail.com>"
   :licence "MIT"
   :description "A Redis database interface through socket"
   :depends-on (:rutils :usocket :cl-ppcre :flexi-streams)
   :serial t
   :components ((:file "package")
+               (:file "connection")
                (:file "redis")
                (:file "commands")))
 
@@ -25,7 +26,7 @@
 #+:nuts
 (defsystem #:cl-redis-test
   :name "Redis client testsuite"
-  :version '(0 2 0)
+  :version '(1 0 0)
   :maintainer "Vsevolod Dyomkin <vseloved@gmail.com>"
   :licence "MIT"
   :description ""
@@ -37,6 +38,7 @@
 (defmethod perform ((o test-op)
                     (c (eql (find-system 'cl-redis-test))))
   (operate 'load-op '#:cl-redis-test)
-  (funcall (intern (symbol-name 'run-tests) '#:redis-test)))
+  (funcall (intern (symbol-name 'run-tests)
+                   '#:redis-test)))
 
 ;;; end
