@@ -1,0 +1,36 @@
+A fast and robust Common Lisp client for Redis database 
+
+h2. Dependencies
+
+* "flexi-streams":http://weitz.de/flexi-streams
+* "usocket":http://common-lisp.net/project/usocket/
+* "rutils":http://github.com/vseloved/rutils
+* only for tests: "nuts":http://github.com/vseloved/nuts
+
+h2. Usage
+
+# <p align="justify">Make sure a Redis server is running.</p>
+# <p align="justify">@(require 'cl-redis)@</p>
+# <p align="justify">Connect to the server to the given host and port with @(redis:connect :host <host> :port <port>)@ (@host@ defaults to 127.0.0.1 and @port@ defaults to 6739). You can specify the encoding that should be used with the keyword argument @encoding@ (the default is @:utf-8@).</p>
+# <p align="justify">Interact with the server using the commands whose names are just Redis commands prepended with the prefix @*cmd-prefix*@, which defaults to @'red@. For example, @(redis:red-ping)@ => "PONG".</p>
+# <p align="justify">Disconnect from the server with @(redis:disconnect)@.</p>
+# <p align="justify">Alternatively, wrap the whole server-client interaction session into a @with-connection@ macro, which accepts the same arguments @connect@ does, opens a socket connection, executes the body of the macro with the current connection bound to this new connection, and ensures that the connection is closed afterwards.</p>
+
+h2. Extending
+
+p<>. There are 2 generic functions: @tell@ and @expect@, which implement different styles of Redis interactions according to the "protocol":http://code.google.com/p/redis/wiki/ProtocolSpecification. @tell@ specifies how a request to Redis is formatted and @expect@ — how the response is handled. The best way to implement another method on @expect@ is usually with @def-expect-method@, which arranges reading data from the socket and provides a variable @reply@, which holds the raw reply from the server with the initial character removed. For example:
+<pre><code>(def-expect-method :ok
+  (assert (string= reply "OK"))
+  reply)</code></pre>
+
+p<>. Redis operations are defined as functions with @def-cmd@ for which only types of interactions and arguments should be provided. @def-cmd@ prefixes all the defined functions' names with @*cmd-prefix*@, which defaults to @'red@. (Note, that  setting of @*cmd-prefix*@ will have its effects at compile time). An example of command definition is given below:
+<pre><code>(def-cmd KEYS (pattern)
+  "Return all the keys matching the given pattern."
+  :inline  :list)</code></pre>
+(see commands.lisp for all defined commands) 
+
+h2. Debugging, testing and error recovery
+
+p<>. If @*echo-p*@ is set to @T@, all server-client communications will be echoed to the stream @*echo-stream*@, which defaults to @*standard-output*@. The default value of @*echo-p*@ is @NIL@, meaning no echoing.
+
+p<>. Error handling is mimicked after the "Postmodern":http://common-lisp.net/project/postmodern/ library. In particular, whenever an error occurs that breaks the communication stream, a condition of type @redis-connection-error@ is signaled offering a @:reconnect@ restart. Furthermore, @connect@ checks if a connection to Redis is already established, and offers two restarts (@:leave@ and @:replace@) if this is the case. When the server responses with an error reply (i.e., a reply that starts with @-@), a condition of type @redis-error-reply@ is signaled.
