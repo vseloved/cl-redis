@@ -14,6 +14,7 @@
            #:disconnect
            #:connected-p
            #:with-connection
+           #:with-resive-connection
 
            #:*echo-p*
            #:*echo-stream*
