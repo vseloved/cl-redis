@@ -133,6 +133,16 @@ specified by the given HOST, PORT, and ENCODING."
      (unwind-protect (progn ,@body)
        (close-connection *connection*))))
 
+(defmacro with-recursive-connection (&body body)
+  "Execute BODY with *CONNECTION* bound to the default Redis
+connection. If connection is already established, reuse it."
+  `(if *connection*
+       (progn
+         (open-connection *connection*)
+         ,@body)
+       (with-connection () ,@body)))
+       
+
 (defun connected-p ()
   "Is the current connection to Redis server still open?"
   (and *connection* (open-connection-p *connection*)))
