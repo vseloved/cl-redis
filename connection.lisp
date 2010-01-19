@@ -98,9 +98,8 @@ set the stream of CONNECTION to the associated stream."
           (open-stream-p it)))
 
 (defun close-connection (connection)
-  "Close the socket of CONNECTION."
-  (when (open-connection-p connection)
-    (ignore-errors (socket-close (connection-socket connection)))))
+  "Close the stream of CONNECTION."
+  (ignore-errors (socket-close (connection-socket connection))))
 
 (defun ensure-connection (connection)
   "Ensure that CONNECTION is open before doing anything with it."
