@@ -99,7 +99,7 @@ set the stream of CONNECTION to the associated stream."
 
 (defun close-connection (connection)
   "Close the stream of CONNECTION."
-  (ignore-errors (socket-close (connection-socket connection))))
+  (socket-close (connection-socket connection)))
 
 (defun ensure-connection (connection)
   "Ensure that CONNECTION is open before doing anything with it."
@@ -139,8 +139,7 @@ specified by the given HOST, PORT, and ENCODING."
 (defmacro with-recursive-connection (&body body)
   "Execute BODY with *CONNECTION* bound to the default Redis
 connection. If connection is already established, reuse it."
-  `(if (connected-p)
-       (progn ,@body)
+  `(if (connected-p) (progn ,@body)
        (with-connection ()
          ,@body)))
        
@@ -165,8 +164,7 @@ connection. If connection is already established, reuse it."
 
 (defun disconnect ()
   "Disconnect from Redis server."
-  (when (connected-p)
-    (close-connection *connection*))
+  (close-connection *connection*)
   (setf *connection* nil))
 
 ;;; end
