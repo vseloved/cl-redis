@@ -167,4 +167,9 @@ connection. If connection is already established, reuse it."
   (close-connection *connection*)
   (setf *connection* nil))
 
+(defun reconnect ()
+  "Close and re-open the connection to Redis server."
+  (close-connection *connection*)
+  (open-connection *connection*))
+
 ;;; end

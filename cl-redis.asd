@@ -5,7 +5,7 @@
 
 (defsystem #:cl-redis
   :name "Redis client"
-  :version '(1 1 3)
+  :version '(1 2 0)
   :maintainer "Vsevolod Dyomkin <vseloved@gmail.com>"
   :licence "MIT"
   :description "A Redis database interface through socket"

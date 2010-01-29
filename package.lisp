@@ -12,6 +12,10 @@
            
            #:connect
            #:disconnect
+           #:reconnect
+           #:*connection*
+           #:open-connection
+           #:close-connection
            #:connected-p
            #:with-connection
            #:with-recursive-connection
