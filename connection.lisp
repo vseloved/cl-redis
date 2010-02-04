@@ -139,11 +139,11 @@ specified by the given HOST, PORT, and ENCODING."
 (defmacro with-recursive-connection ((&key (host #(127 0 0 1))
                                            (port 6379)
                                            (encoding :utf-8))
-                                     (&body body)
+                                     &body body)
   "Execute BODY with *CONNECTION* bound to the default Redis
 connection. If connection is already established, reuse it."
   `(if (connected-p) (progn ,@body)
-       (with-connection (:host gost :port port :encoding encoding)
+       (with-connection (:host ,host :port ,port :encoding ,encoding)
          ,@body)))
        
 (defun connected-p ()
