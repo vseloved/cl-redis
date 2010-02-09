@@ -134,7 +134,7 @@ specified by the given HOST, PORT, and ENCODING."
                                       :port ,port
                                       :encoding ,encoding)))
      (unwind-protect (progn ,@body)
-       (close-connection *connection*))))
+       (ignore-errors (close-connection *connection*)))))
 
 (defmacro with-recursive-connection ((&key (host #(127 0 0 1))
                                            (port 6379)
