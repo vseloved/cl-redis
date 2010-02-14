@@ -101,6 +101,11 @@ set the stream of CONNECTION to the associated stream."
   "Close the stream of CONNECTION."
   (socket-close (connection-socket connection)))
 
+(defun reopen-connection (connection)
+  "Close and reopen CONNECTION."
+  (close-connection connection)
+  (open-connection connection))
+
 (defun ensure-connection (connection)
   "Ensure that CONNECTION is open before doing anything with it."
   (unless connection
@@ -108,7 +113,7 @@ set the stream of CONNECTION to the associated stream."
   (unless (open-connection-p connection)
     (signal-connection-error-with-reconnect-restart
      :message "Connection to Redis server lost."
-     :restart (open-connection connection))))
+     :restart (reopen-connection connection))))
 
 (defmacro with-reconnect-restart (connection &body body)
   "When, inside BODY, an error occurs that breaks the stream of CONNECTION,
@@ -119,7 +124,7 @@ restart."
        (ensure-connection ,=connection=)
        (labels ((,=body= ()
                   (provide-reconnect-restart (progn ,@body)
-                    (open-connection ,=connection=)
+                    (reopen-connection ,=connection=)
                     (,=body=))))
          (,=body=)))))
 
@@ -171,8 +176,7 @@ connection. If connection is already established, reuse it."
   (setf *connection* nil))
 
 (defun reconnect ()
-  "Close and re-open the connection to Redis server."
-  (close-connection *connection*)
-  (open-connection *connection*))
+  "Close and reopen the connection to Redis server."
+  (reopen-connection *connection*))
 
 ;;; end
