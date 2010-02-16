@@ -98,8 +98,12 @@ set the stream of CONNECTION to the associated stream."
           (open-stream-p it)))
 
 (defun close-connection (connection)
-  "Close the stream of CONNECTION."
-  (socket-close (connection-socket connection)))
+  "Close the socket of CONNECTION."
+  (when (open-connection-p connection)
+    (handler-case
+        (socket-close (connection-socket connection))
+      (error (e)
+        (warn "Ignoring the error that happened while trying to close Redis communication socket: ~A" e)))))
 
 (defun reopen-connection (connection)
   "Close and reopen CONNECTION."
@@ -139,7 +143,7 @@ specified by the given HOST, PORT, and ENCODING."
                                       :port ,port
                                       :encoding ,encoding)))
      (unwind-protect (progn ,@body)
-       (ignore-errors (close-connection *connection*)))))
+       (close-connection *connection*))))
 
 (defmacro with-recursive-connection ((&key (host #(127 0 0 1))
                                            (port 6379)
