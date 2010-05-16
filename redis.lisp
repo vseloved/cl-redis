@@ -64,6 +64,11 @@ error will be signalled.  CMD is the command name (a string or a symbol), ~
 and ARGS are its arguments (keyword arguments are also supported).  In the ~
 case of a :BULK command the last argument must be a string."))
 
+(defmethod tell :around (type cmd &rest args)
+  (declare (ignore type args))
+  (let ((cmd (ppcre:split "-" (string cmd))))
+    (call-next-method)))
+
 (defmethod tell :after (type cmd &rest args)
   (declare (ignore type cmd args))
   (force-output (connection-stream *connection*)))
@@ -81,6 +86,15 @@ case of a :BULK command the last argument must be a string."))
     (write-redis-line "~A~{ ~A~} ~A" cmd args (byte-length bulk))
     (write-redis-line "~A" bulk)))
 
+(defmethod tell ((type (eql :multi)) cmd &rest args)
+  (let ((bulks (cons (string cmd) args)))
+    (write-redis-line "*~A" (length bulks))
+    (dolist (bulk bulks)
+      (write-redis-line "$~A" (byte-length bulk))
+      (write-redis-line "~A" bulk))))
+
+;; command-specific TELL methods
+
 (defmethod tell ((type (eql :inline)) (cmd (eql 'SORT)) &rest args)
   (flet ((send-request (key &key by get desc alpha start end)
            (unless (or (and start end)
@@ -89,14 +103,6 @@ case of a :BULK command the last argument must be a string."))
            (write-redis-line "SORT ~a~:[~; BY ~:*~a~]~{ GET ~a~}~:[~; DESC~]~:[~; ALPHA~]~:[~; LIMIT ~:*~a ~a~]"
                              key by (mklist get) desc alpha start end)))
     (apply #'send-request args)))
-
-(defmethod tell ((type (eql :multi)) cmd &rest args)
-  (let ((bulks (cons (string cmd) args)))
-    (write-redis-line "*~A" (length bulks))
-    (dolist (bulk bulks)
-      (write-redis-line "$~A" (byte-length bulk))
-      (write-redis-line "~A" bulk))))
-
 
 ;; receiving replies 
 
@@ -117,22 +123,14 @@ server with the first character removed."
                 (,char (char ,line 0))
                 (reply (subseq ,line 1)))
            (when *echo-p* (format *echo-stream* "S: ~A~%" ,line))
-           (case ,char
-             ((#\-)             (error 'redis-error-reply :message reply))
-             ((#\+ #\: #\$ #\*) ,@body)
-             (otherwise         (error 'redis-bad-reply
-                                       :message (format nil
-                                                        "Received ~C as the ~
+           (if (string= ,line "QUEUED") "QUEUED"
+               (case ,char
+                 (#\- (error 'redis-error-reply :message reply))
+                 ((#\+ #\: #\$ #\*) ,@body)
+                 (otherwise (error 'redis-bad-reply
+                                   :message (format nil "Received ~C as the ~
 initial reply byte."
-                                                        ,char)))))))))
-
-(def-expect-method :ok
-    (assert (string= reply "OK"))
-  reply)
-
-(def-expect-method :pong
-    (assert (string= reply "PONG"))
-  reply)
+                                                    ,char))))))))))
 
 (def-expect-method :inline
   reply)
@@ -147,26 +145,38 @@ initial reply byte."
 
 (def-expect-method :bulk
   (let ((size (parse-integer reply)))
-    (if (= size -1)
-        nil
-        (let ((octets (make-array size :element-type 'octet))
-              (stream (connection-stream *connection*)))
-          (read-sequence octets stream)
-          (read-byte stream)    ; #\Return
-          (read-byte stream)    ; #\Linefeed
-          (let ((string
-                 (octets-to-string octets
-                                   :external-format
-                                   (connection-external-format *connection*))))
-            (when *echo-p* (format *echo-stream* "S: ~A~%" string))
-            string))))) 
+    (unless (= size -1)
+      (let ((octets (make-array size :element-type 'octet))
+            (stream (connection-stream *connection*)))
+        (read-sequence octets stream)
+        (read-byte stream)    ; #\Return
+        (read-byte stream)    ; #\Linefeed
+        (let ((string
+               (octets-to-string octets
+                                 :external-format
+                                 (connection-external-format *connection*))))
+          (when *echo-p* (format *echo-stream* "S: ~A~%" string))
+          (unless (string= string "nil")  ; account for `special' nil value
+            string))))))
 
 (def-expect-method :multi
   (let ((n (parse-integer reply)))
-    (if (= n -1)
-        nil
-        (loop :repeat n
-           :collect (expect :bulk)))))
+    (unless (= n -1)
+      (loop :repeat n
+         :collect (expect :bulk)))))
+
+(defmethod expect ((type (eql :status)))
+  "Receive and process status reply, which is just a string, preceeded with +."
+  (let* ((line (read-line (connection-stream *connection*)))
+         (char (char line 0)))
+    (when *echo-p* (format *echo-stream* "S: ~A~%" line))
+    (case char
+      (#\- (error 'redis-error-reply :message reply))
+      (#\+ (subseq line 1))
+      (otherwise (error 'redis-bad-reply
+                        :message (format nil "Received ~C as the initial reply ~
+byte."
+                                         char))))))
 
 (defmethod expect ((type (eql :end)))
   "Used for commands QUIT and SHUTDOWN."

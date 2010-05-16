@@ -1,5 +1,5 @@
 ;;; CL-REDIS system definition
-;;; (c) Vsevolod Dyomkin, Oleksandr Manzyuk. see LICENSE file for permissions
+;;; (c) Vsevolod Dyomkin, Oleksandr Manzyuk.  See LICENSE file for permissions
 
 (in-package :asdf)
 
