@@ -4,11 +4,10 @@
 (in-package :asdf)
 
 (defsystem #:cl-redis
-  :name "Redis client"
-  :version '(1 3 4)
+  :version '(1 5 0)
   :maintainer "Vsevolod Dyomkin <vseloved@gmail.com>"
   :licence "MIT"
-  :description "A Redis database interface through socket"
+  :description "Redis database client, using usocket interface."
   :depends-on (:rutils :usocket :cl-ppcre :flexi-streams)
   :serial t
   :components ((:file "package")
@@ -17,24 +16,23 @@
                (:file "commands")))
 
 
-#+:nuts
+#+nuts
 (defmethod perform ((o test-op)
                     (c (eql (find-system 'cl-redis))))
   (operate 'load-op '#:cl-redis)
   (operate 'test-op '#:cl-redis-test :force t))
 
-#+:nuts
+#+nuts
 (defsystem #:cl-redis-test
-  :name "Redis client testsuite"
-  :version '(1 0 0)
+  :version '(1 5 0)
   :maintainer "Vsevolod Dyomkin <vseloved@gmail.com>"
   :licence "MIT"
-  :description ""
-  :depends-on (:cl-redis :nuts)
+  :description "CL-Redis test suite"
+  :depends-on (:cl-redis :nuts :bordeaux-threads)
   :serial t
   :components ((:file "test")))
 
-#+:nuts
+#+nuts
 (defmethod perform ((o test-op)
                     (c (eql (find-system 'cl-redis-test))))
   (operate 'load-op '#:cl-redis-test)

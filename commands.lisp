@@ -35,11 +35,11 @@
 
 (def-cmd KEYS (pattern)
   "Return all the keys matching a given pattern."
-  :inline :list)
+  :inline :multi)
 
 (def-cmd RANDOMKEY ()
   "Return a random key from the key space."
-  :inline :inline)
+  :inline :bulk)
 
 (def-cmd RENAME (oldname newname)
   "Rename the old key in the new one, destroing the newname key if it
@@ -134,7 +134,7 @@ if none of the keys already exist."
 
 (def-cmd APPEND (key value)
   "Append the specified string to the string stored at key."
-  :inline :integer)
+  :bulk :integer)
 
 (def-cmd SUBSTR (key start end)
   "Return a substring out of a larger string."
@@ -145,11 +145,11 @@ if none of the keys already exist."
 
 (def-cmd RPUSH (key value)
   "Append an element to the tail of the List value at key."
-  :bulk :status)
+  :bulk :integer)
   
 (def-cmd LPUSH (key value)
   "Append an element to the head of the List value at key."
-  :bulk :status)
+  :bulk :integer)
 
 (def-cmd LLEN (key)
   "Return the length of the List value at key."
@@ -282,12 +282,12 @@ otherwise add the member setting INCREMENT as score."
 (def-cmd ZRANK (key member)
   "Return the rank (or index) or MEMBER in the sorted set at KEY,
 with scores being ordered from low to high."
-  :inline :bulk)
+  :bulk :integer)
 
 (def-cmd ZREVRANK (key member)
   "Return the rank (or index) or MEMBER in the sorted set at KEY,
 with scores being ordered from high to low."
-  :inline :bulk)
+  :bulk :integer)
 
 (def-cmd ZRANGE (key start end)
   "Return a range of elements from the sorted set at KEY."
@@ -311,7 +311,7 @@ query) from the sorted set."
 (def-cmd ZSCORE (key element)
   "Return the score associated with the specified ELEMENT of the
 sorted set at KEY."
-  :bulk :bulk)
+  :bulk :float)
 
 (def-cmd ZREMRANGEBYRANK (key min max)
   "Remove all the elements with rank >= MIN and rank <= MAX from the
@@ -323,60 +323,64 @@ sorted set."
 sorted set."
   :inline :integer)
 
-#+nil
-(def-cmd ZUNIONSTORE (dstkey n &key keys weights aggregate sum min max)
+(def-cmd ZUNIONSTORE (dstkey n keys
+                             &rest args &key weights aggregate)
   "Perform a union over a number of sorted sets with optional
 weight and aggregate."
-  )
+  :inline :integer)
 
-#+nil
-(def-cmd ZINTERSTORE (dstkey n &key keys weights aggregate sum min max)
+(def-cmd ZINTERSTORE (dstkey n keys
+                             &rest args &key weights aggregate)
   "Perform an intersection over a number of sorted sets with optional
 weight and aggregate."
-  )
+  :inline :integer)
 
 
 ;; Commands operating on hashes
 
 (def-cmd HSET (key field value)
   "Set the hash FIELD to the specified VALUE. Creates the hash if needed."
-  :bulk :boolean)
+  :bulk :integer)
 
 (def-cmd HGET (key field)
   "Retrieve the value of the specified hash FIELD."
-  :inline :bulk)
+  :generic :bulk)
 
 (def-cmd HMSET (key &rest fields-and-values)
   "Set the hash FIELDS to their respective VALUES."
   :multi :status)
 
+(def-cmd HMGET (key &rest fields)
+  "Get the hash values associated with the specified fields."
+  :generic :multi)
+
 (def-cmd HINCRBY (key field integer)
   "Increment the integer value of the hash at KEY on FIELD with INTEGER."
-  :inlne :integer)
+  :inline :integer)
 
 (def-cmd HEXISTS (key field)
   "Test for existence of a specified FIELD in a hash."
-  :inlne :boolean)
+  :generic :boolean)
 
 (def-cmd HDEL (key field)
   "Remove the specified FIELD from a hash."
-  :inlne :integer)
+  :generic :boolean)
 
 (def-cmd HLEN (key)
   "Return the number of items in a hash."
-  :inlne :integer)
+  :inline :integer)
 
 (def-cmd HKEYS (key)
   "Return all the fields in a hash."
-  :inlne :bulk)
+  :inline :multi)
 
 (def-cmd HVALS (key)
   "Return all the values in a hash."
-  :inlne :bulk)
+  :inline :multi)
 
 (def-cmd HGETALL (key)
   "Return all the fields and associated values in a hash."
-  :inlne :bulk)
+  :inline :multi)
 
 
 ;; Sorting
@@ -401,7 +405,7 @@ weight and aggregate."
 
 (def-cmd EXEC ()
   "Redis atomic transactions' commit."
-  :inline :multi)
+  :inline :queued)
 
 (def-cmd DISCARD ()
   "Redis atomic transactions' rollback."
@@ -410,27 +414,22 @@ weight and aggregate."
 
 ;; Publish/Subscribe
 
-#+nil
 (def-cmd SUBSCRIBE (&rest channels)
   "Redis Public/Subscribe messaging paradigm implementation."
-  :inline :multi)
+  :inline :pubsub)
 
-#+nil
 (def-cmd UNSUBSCRIBE (&rest channels)
   "Redis Public/Subscribe messaging paradigm implementation."
-  :inline :multi)
+  :inline :pubsub)
 
-#+nil
 (def-cmd PSUBSCRIBE (&rest patterns)
   "Redis Public/Subscribe messaging paradigm implementation."
-  :inline :multi)
+  :inline :pubsub)
 
-#+nil
 (def-cmd PUNSUBSCRIBE (&rest patterns)
   "Redis Public/Subscribe messaging paradigm implementation."
-  :inline :multi)
+  :inline :pubsub)
 
-#+nil
 (def-cmd PUBLISH (channel message)
   "Redis Public/Subscribe messaging paradigm implementation."
   :bulk :integer)

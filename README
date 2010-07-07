@@ -1,3 +1,3 @@
 CL-REDIS -- a Redis client for Common Lisp
 
-Tested (not thoroughly) with version 1.1.9
+Tested with version 2.0.0-rc2.
