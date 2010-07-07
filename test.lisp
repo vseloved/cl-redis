@@ -16,6 +16,16 @@
           (*echo-stream* (make-string-output-stream)))
       (list
        (check string=
+              (progn (tell :generic 'hget "h1" "f1")
+                     (get-output-stream-string *echo-stream*))
+              " > *3
+ > $4
+ > hget
+ > $2
+ > h1
+ > $2
+ > f1")
+       (check string=
               (progn (tell :inline 'ping)
                      (get-output-stream-string *echo-stream*))
               " > PING
@@ -68,6 +78,8 @@
   (check string= "10$"   (expect-from-str :inline "+10$"))
   (check null            (expect-from-str :boolean "+0$"))
   (check = 10            (expect-from-str :integer "+10"))
+  (check = 10.0          (expect-from-str :float "+4
+10.0"))
   (check string= "abc"   (expect-from-str :bulk "+3
 abc"))
   (check equal '("a" "") (expect-from-str :multi "*2
