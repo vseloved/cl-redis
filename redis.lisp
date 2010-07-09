@@ -9,17 +9,17 @@
 (defun byte-length (string)
   "Return the length of STRING if encoded using the external format ~
 of the current connection."
-  (octet-length string
-                :external-format (connection-external-format *connection*)))
+  (flex:octet-length string :external-format :utf-8))
 
 (defun format-redis-line (fmt &rest args)
   "Write a CRLF-terminated string formatted according to the given control ~
 string FMT and its arguments ARGS to the stream of the current connection.
 If *ECHOP-P* is not NIL, write that string to *ECHO-STREAM*, too."
   (let ((string (apply #'format nil fmt args))
-        (redis-out (connection-stream *connection*)))
+        (redis-out (connection-socket *connection*)))
     (when *echo-p* (format *echo-stream* " > ~A~%" string))
-    (write-line string redis-out)))
+    (write-line string redis-out)
+    (finish-output redis-out)))
 
 
 ;; conditions
@@ -72,7 +72,7 @@ case of a :BULK command the last argument must be a string."))
 
 (defmethod tell :after (type cmd &rest args)
   (declare (ignore type cmd args))
-  (force-output (connection-stream *connection*)))
+  (force-output (connection-socket *connection*)))
 
 (defmethod tell (type cmd &rest args)
   (declare (ignore cmd args))
@@ -138,7 +138,7 @@ from Redis server."))
 
 (eval-always
   (defmacro with-redis-in ((line char) &body body)
-    `(let* ((,line (read-line (connection-stream *connection*)))
+    `(let* ((,line (read-line (connection-socket *connection*)))
             (,char (char ,line 0)))
        (when *echo-p* (format *echo-stream* "<  ~A~%" ,line))
        ,@body))
@@ -164,7 +164,7 @@ initial reply byte."
 
 (defmethod expect ((type (eql :anything)))
   "Receive and process status reply, which is just a string, preceeded with +."
-  (case (peek-char nil (connection-stream *connection*))
+  (case (peek-char nil (connection-socket *connection*))
     (#\+ (expect :status))
     (#\: (expect :inline))
     (#\$ (expect :bulk))
@@ -196,15 +196,13 @@ byte."
 (macrolet ((read-bulk-reply (&optional reply-transform)
              `(let ((n (parse-integer reply)))
                 (unless (= n -1)
-                  (let ((octets (make-array n :element-type 'octet))
-                        (stream (connection-stream *connection*)))
-                    (read-sequence octets stream)
-                    (read-byte stream)  ; #\Return
-                    (read-byte stream)  ; #\Linefeed
-                    (let ((string (octets-to-string octets
-                                                    :external-format
-                                                    (connection-external-format
-                                                     *connection*))))
+                  (let ((octets (make-array n :element-type 'io.streams:ub8))
+                        (socket (connection-socket *connection*)))
+                    (read-sequence octets socket)
+                    (read-byte socket)  ; #\Return
+                    (read-byte socket)  ; #\Linefeed
+                    (let ((string (babel:octets-to-string octets
+                                                          :encoding :utf-8)))
                       (when *echo-p* (format *echo-stream* "<  ~A~%" string))
                       (if (string= string "nil")
                           nil
@@ -228,14 +226,16 @@ byte."
          :collect (expect :anything)))))
 
 (defmethod expect ((type (eql :pubsub)))
-  "Receive and process status reply, which is just a string, preceeded with +."
-  (let ((in (connection-stream *connection*)))
+  (let ((in (connection-socket *connection*)))
     (loop :collect (with-redis-in (line char)
                      (list (expect :bulk)
                            (expect :bulk)
                            (expect :inline)))
        :do (let ((next-char (read-char-no-hang in)))
-             (if next-char (unread-char next-char in)
+             (if next-char (progn (unread-char next-char in)
+                                  ;; after unread-char #\Newline is
+                                  ;; received from iolib socket!
+                                  (read-char in))
                  (loop-finish))))))
 
 (defmethod expect ((type (eql :end)))

@@ -27,22 +27,10 @@ for debugging purposes.  The default is *STANDARD-OUTPUT*.")
     :initarg  :port
     :initform 6379
     :reader   connection-port)
-   (encoding
-    :initarg  :encoding
-    :initform :utf-8
-    :reader   connection-encoding)
-   (stream
-    :initform nil
-    :accessor connection-stream)
    (socket
     :initform nil
     :accessor connection-socket))
   (:documentation "Representation of a Redis connection."))
-
-(defmethod connection-external-format ((connection redis-connection))
-  "Return the external format of CONNECTION based on its encoding."
-  (make-external-format (connection-encoding connection)
-                        :eol-style :crlf))
 
 (defmacro signal-connection-error-with-reconnect-restart
     (&key message comment restart)
@@ -57,11 +45,11 @@ MESSAGE and COMMENT offering a :reconnect restart given by RESTART."
 
 (defmacro provide-reconnect-restart (expression &body body)
   "When, during the execution of EXPRESSION, an error occurs that can break
-the connection stream, a condition of type REDIS-CONNECTION-ERROR is raised
+the connection socket, a condition of type REDIS-CONNECTION-ERROR is raised
 offering a :reconnect restart whose body is given by BODY."
   (with-gensyms (err)
     `(handler-case ,expression
-       (connection-refused-error (,err)
+       (sockets:socket-connection-refused-error (,err)
          ;; Errors of this type commonly occur when there is no Redis server
          ;; running, or when one tries to connect to the wrong host or port.
          ;; We anticipate this by providing a helpful comment.
@@ -69,7 +57,7 @@ offering a :reconnect restart whose body is given by BODY."
           :message ,err
           :comment "Make sure Redis server is running and check your connection parameters."
           :restart (progn ,@body)))
-       ((or socket-error stream-error) (,err)
+       ((or sockets:socket-error stream-error) (,err)
          (signal-connection-error-with-reconnect-restart
           :message ,err
           :restart (progn ,@body))))))
@@ -79,29 +67,30 @@ offering a :reconnect restart whose body is given by BODY."
   
 (defun open-connection (connection)
   "Create a socket connection to the host and port of CONNECTION and
-set the stream of CONNECTION to the associated stream."
+set the socket of CONNECTION to the associated socket."
   (provide-reconnect-restart
-      (setf (connection-socket connection)
-            (socket-connect (connection-host connection)
-                            (connection-port connection)
-                            :element-type 'octet)
-            (connection-stream connection)
-            (make-flexi-stream (socket-stream (connection-socket connection))
-                               :external-format (connection-external-format
-                                                 connection)
-                               :element-type 'octet))
+      (let ((socket (sockets:make-socket
+                     :connect :active
+                     :address-family :internet
+                     :type :stream
+                     :external-format '(:utf-8 :eol-style :crlf)
+                     :ipv6 nil)))
+        (setf (connection-socket connection)
+              (sockets:connect socket (sockets:lookup-host
+                                       (connection-host connection))
+                               :port (connection-port connection))))
     (open-connection connection)))
 
 (defun open-connection-p (connection)
-  "Is the stream of CONNECTION open?"
-  (and-it (connection-stream connection)
-          (open-stream-p it)))
+  "Is the socket of CONNECTION open?"
+  (and-it (connection-socket connection)
+          (sockets:socket-open-p it)))
 
 (defun close-connection (connection)
   "Close the socket of CONNECTION."
   (when (open-connection-p connection)
     (handler-case
-        (socket-close (connection-socket connection))
+        (close (connection-socket connection))
       (error (e)
         (warn "Ignoring the error that happened while trying to close Redis communication socket: ~A" e)))))
 
@@ -120,7 +109,7 @@ set the stream of CONNECTION to the associated stream."
      :restart (reopen-connection connection))))
 
 (defmacro with-reconnect-restart (connection &body body)
-  "When, inside BODY, an error occurs that breaks the stream of CONNECTION,
+  "When, inside BODY, an error occurs that breaks the socket of CONNECTION,
 a condition of type REDIS-CONNECTION-ERROR is raised offering a :reconnect
 restart."
   (with-gensyms (=connection= =body=)
@@ -133,33 +122,30 @@ restart."
          (,=body=)))))
 
 (defmacro with-connection ((&key (host #(127 0 0 1))
-                                 (port 6379)
-                                 (encoding :utf-8))
+                                 (port 6379))
                            &body body)
   "Evaluate BODY with the current connection bound to a new connection
-specified by the given HOST, PORT, and ENCODING."
+specified by the given HOST and PORT"
   `(let ((*connection* (make-instance 'redis-connection
                                       :host ,host
-                                      :port ,port
-                                      :encoding ,encoding)))
+                                      :port ,port)))
      (unwind-protect (progn ,@body)
        (close-connection *connection*))))
 
 (defmacro with-recursive-connection ((&key (host #(127 0 0 1))
-                                           (port 6379)
-                                           (encoding :utf-8))
+                                           (port 6379))
                                      &body body)
   "Execute BODY with *CONNECTION* bound to the default Redis
 connection. If connection is already established, reuse it."
   `(if (connected-p) (progn ,@body)
-       (with-connection (:host ,host :port ,port :encoding ,encoding)
+       (with-connection (:host ,host :port ,port)
          ,@body)))
        
 (defun connected-p ()
   "Is the current connection to Redis server still open?"
   (and *connection* (open-connection-p *connection*)))
 
-(defun connect (&key (host #(127 0 0 1)) (port 6379) (encoding :utf-8))
+(defun connect (&key (host #(127 0 0 1)) (port 6379))
   "Connect to Redis server."
   (when (connected-p)
     (restart-case (error "A connection to Redis server is already established.")
@@ -171,8 +157,7 @@ connection. If connection is already established, reuse it."
         (disconnect))))
   (setf *connection* (make-instance 'redis-connection
                                     :host host
-                                    :port port
-                                    :encoding encoding)))
+                                    :port port)))
 
 (defun disconnect ()
   "Disconnect from Redis server."

@@ -20,11 +20,12 @@
                      (get-output-stream-string *echo-stream*))
               " > *3
  > $4
- > hget
+ > HGET
  > $2
  > h1
  > $2
- > f1")
+ > f1
+")
        (check string=
               (progn (tell :inline 'ping)
                      (get-output-stream-string *echo-stream*))
@@ -58,38 +59,47 @@
 "))))
 
 (defun expect-from-str (expected input)
-  (with-connection ()
-    (let ((ext-fmt (redis::connection-external-format redis::*connection*)))
-      (flexi-streams:with-input-from-sequence
-          (in (flexi-streams:string-to-octets
-               (strcat input "
-")
-               :external-format ext-fmt))
-        (setf in
-              (flexi-streams:make-flexi-stream
-               in
-               :external-format ext-fmt
-               :element-type 'flexi-streams:octet)
-              (redis::connection-stream redis::*connection*) in)
-        (expect expected)))))
+  (sockets:with-open-socket (server :connect :passive
+                                    :address-family :internet
+                                    :type :stream
+                                    :ipv6 nil
+                                    :external-format '(:utf-8 :eol-style :crlf))
+    (sockets:bind-address server sockets:+ipv4-unspecified+ :port 63799
+                          :reuse-addr t)
+    (sockets:listen-on server)
+    (with-connection (:port 63799)
+      (let* ((client (sockets:accept-connection server :wait t))
+             (bt:*default-special-bindings*
+              (append (list (cons '*connection* *connection*)
+                            (cons '*trace-output* *trace-output*))
+                      bt:*default-special-bindings*))
+             (worker (bt:make-thread #`(expect expected))))
+        (mapcar #`(write-line _ client)
+                (mklist input))
+        (finish-output client)
+        (bt:join-thread worker)))))
+
 
 (deftest expect ()
-  (check true            (expect-from-str :status "+OK"))
-  (check string= "10$"   (expect-from-str :inline "+10$"))
-  (check null            (expect-from-str :boolean "+0$"))
-  (check = 10            (expect-from-str :integer "+10"))
-  (check = 10.0          (expect-from-str :float "+4
-10.0"))
-  (check string= "abc"   (expect-from-str :bulk "+3
-abc"))
-  (check equal '("a" "") (expect-from-str :multi "*2
-$1
-a
-$0
-"))
-  (check equal '("a" "b" "c")
-                         (expect-from-str :list "+5
-a b c")))
+  (check true                  (expect-from-str :status "+OK"))
+  (check string= "10$"         (expect-from-str :inline "+10$"))
+  (check null                  (expect-from-str :boolean "+0$"))
+  (check = 10                  (expect-from-str :integer "+10"))
+  (check = 10.0                (expect-from-str :float '("+4" "10.0")))
+  (check string= "abc"         (expect-from-str :bulk '("+3" "abc")))
+  (check equal '("a" nil)      (expect-from-str :multi '("*2" "$1" "a" "$-1")))
+  ;; undocumented case for $0, let's be on the safe side
+  (check equal '("a" nil)      (expect-from-str :anything
+                                                '("*2" "$1" "a" "$0" "")))
+  (check equal '("a" "b" "c")  (expect-from-str :list '("+5" "a b c")))
+  (check equal '("OK" ("a"))   (expect-from-str :queued
+                                                '("*2" "+OK" "*1" "$1" "a")))
+  (check equal '(("subscribe" "chan1" "1") ("subscribe" "chan2" "2"))
+                               (expect-from-str :pubsub
+                                                '("*3" "$9" "subscribe"
+                                                  "$5" "chan1" ":1"
+                                                  "*3" "$9" "subscribe"
+                                                  "$5" "chan2" ":2"))))  
 
 (defun find-s (seq str)
   (true (find str seq :test #'string=)))
