@@ -5,7 +5,6 @@
 
 (defpackage :redis
   (:use :common-lisp :rutils.usr
-;        :usocket :flexi-streams
         #+:nuts :nuts)
   (:export #:redis-connection
            #:connection-external-format

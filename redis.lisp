@@ -7,9 +7,8 @@
 ;; utils
 
 (defun byte-length (string)
-  "Return the length of STRING if encoded using the external format ~
-of the current connection."
-  (flex:octet-length string :external-format :utf-8))
+  "Return the length of STRING if encoded using utf-8 external format."
+  (length (babel:string-to-octets string)))
 
 (defun format-redis-line (fmt &rest args)
   "Write a CRLF-terminated string formatted according to the given control ~
@@ -195,7 +194,7 @@ byte."
 
 (macrolet ((read-bulk-reply (&optional reply-transform)
              `(let ((n (parse-integer reply)))
-                (unless (= n -1)
+                (unless (<= n 0)
                   (let ((octets (make-array n :element-type 'io.streams:ub8))
                         (socket (connection-socket *connection*)))
                     (read-sequence octets socket)
