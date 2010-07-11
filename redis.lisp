@@ -210,7 +210,7 @@ byte."
   (def-expect-method :bulk
     (read-bulk-reply))
   (def-expect-method :float
-    (read-bulk-reply #'parse-float)))
+    (read-bulk-reply (lambda (x) (parse-float x :type 'double-float)))))
 
 (def-expect-method :multi
   (let ((n (parse-integer reply)))
