@@ -47,20 +47,21 @@ MESSAGE and COMMENT offering a :reconnect restart given by RESTART."
   "When, during the execution of EXPRESSION, an error occurs that can break
 the connection socket, a condition of type REDIS-CONNECTION-ERROR is raised
 offering a :reconnect restart whose body is given by BODY."
-  (with-gensyms (err)
-    `(handler-case ,expression
-       (sockets:socket-connection-refused-error (,err)
-         ;; Errors of this type commonly occur when there is no Redis server
-         ;; running, or when one tries to connect to the wrong host or port.
-         ;; We anticipate this by providing a helpful comment.
-         (signal-connection-error-with-reconnect-restart
-          :message ,err
-          :comment "Make sure Redis server is running and check your connection parameters."
-          :restart (progn ,@body)))
-       ((or sockets:socket-error stream-error) (,err)
-         (signal-connection-error-with-reconnect-restart
-          :message ,err
-          :restart (progn ,@body))))))
+  (with-gensyms (err body-fn)
+    `(flet ((,body-fn () ,@body))
+       (handler-case ,expression
+         (sockets:socket-connection-refused-error (,err)
+           ;; Errors of this type commonly occur when there is no Redis server
+           ;; running, or when one tries to connect to the wrong host or port.
+           ;; We anticipate this by providing a helpful comment.
+           (signal-connection-error-with-reconnect-restart
+            :message ,err
+            :comment "Make sure Redis server is running and check your connection parameters."
+            :restart (,body-fn)))
+         ((or sockets:socket-error stream-error) (,err)
+           (signal-connection-error-with-reconnect-restart
+            :message ,err
+            :restart (,body-fn)))))))
 
 (defmethod initialize-instance :after ((connection redis-connection) &key)
   (open-connection connection))

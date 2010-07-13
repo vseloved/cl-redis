@@ -110,6 +110,16 @@ case of a :BULK command the last argument must be a string."))
                              key by (mklist get) desc alpha start end)))
     (apply #'send-request args)))
 
+(macrolet ((z...range-body ()
+             `(flet ((send-request (key start end &rest args &key withscores)
+                       (format-redis-line "~a ~a ~a ~a~:[~; WITHSCORES~]"
+                                         cmd key start end withscores)))
+                (apply #'send-request args))))
+  (defmethod tell ((type (eql :inline)) (cmd (eql 'ZRANGE)) &rest args)
+    (z...range-body))
+  (defmethod tell ((type (eql :inline)) (cmd (eql 'ZREVRANGE)) &rest args)
+    (z...range-body)))
+
 (macrolet ((z...store-body ()
              `(flet ((send-request (dstkey n keys
                                            &rest args &key weights aggregate)
@@ -128,6 +138,7 @@ case of a :BULK command the last argument must be a string."))
     (z...store-body))
   (defmethod tell ((type (eql :inline)) (cmd (eql 'ZINTERSTORE)) &rest args)
     (z...store-body)))
+
 
 ;; receiving replies 
 
@@ -195,7 +206,7 @@ byte."
 (macrolet ((read-bulk-reply (&optional reply-transform)
              `(let ((n (parse-integer reply)))
                 (unless (<= n 0)
-                  (let ((octets (make-array n :element-type 'io.streams:ub8))
+                  (let ((octets (make-array n :element-type '(unsigned-byte 8)))
                         (socket (connection-socket *connection*)))
                     (read-sequence octets socket)
                     (read-byte socket)  ; #\Return
@@ -238,13 +249,12 @@ byte."
                  (loop-finish))))))
 
 (defmethod expect ((type (eql :end)))
-  "Used for commands QUIT and SHUTDOWN."
-  ;; do nothing
+  ;; Used for commands QUIT and SHUTDOWN (does nothing)
   )
 
 (defmethod expect ((type (eql :list)))
-  "Used to make Redis KEYS command return a list of strings (keys) ~
-rather than a single string."
+  ;; Used to make Redis KEYS command return a list of strings (keys)
+  ;; rather than a single string
   (cl-ppcre:split " " (expect :bulk)))
 
     
@@ -270,5 +280,22 @@ and DOCSTRING is the command documentation string."
                    `(tell ,cmd-type ',cmd ,@args))
            (expect ,reply-type)))
        (export ',cmd-name :redis))))
+
+(defmacro with-pipelining (&body body)
+  "Delay execution of EXPECT's inside BODY to the end, so that all
+commands are first sent to the server and then their output is received
+and collected into a list.  So commands return :PIPELINED instead of the
+expected results."
+  (with-gensyms (old-expect pipeline)
+    `(let ((old-expect (fdefinition 'expect))
+           pipeline)
+       (unwind-protect
+            (progn
+              (setf (fdefinition 'expect) (lambda (&rest args)
+                                            (push args pipeline)
+                                            :pipelined))
+              ,@body)
+         (setf (fdefinition 'expect) old-expect))
+       (mapcar #`(apply #'expect _) pipeline))))
 
 ;;; end
