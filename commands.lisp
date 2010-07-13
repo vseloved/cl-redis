@@ -289,11 +289,11 @@ with scores being ordered from low to high."
 with scores being ordered from high to low."
   :bulk :integer)
 
-(def-cmd ZRANGE (key start end)
+(def-cmd ZRANGE (key start end &rest args &key withscores)
   "Return a range of elements from the sorted set at KEY."
   :inline :multi)
 
-(def-cmd ZREVRANGE (key start end)
+(def-cmd ZREVRANGE (key start end &rest args &key withscores)
   "Return a range of elements from the sorted set at KEY, exactly like
 ZRANGE, but the sorted set is ordered in traversed in reverse order,
 from the greatest to the smallest score."

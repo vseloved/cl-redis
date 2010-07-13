@@ -4,11 +4,13 @@
 (in-package :asdf)
 
 (defsystem #:cl-redis
-  :version '(1 6 2)
+  :version '(1 6 3)
   :maintainer "Vsevolod Dyomkin <vseloved@gmail.com>"
   :licence "MIT"
   :description "Redis database client, using usocket interface."
-  :depends-on (:rutils :cl-ppcre :iolib)
+  :depends-on (:rutils
+               :cl-ppcre
+               (:version :iolib "0.6.0"))
   :serial t
   :components ((:file "package")
                (:file "connection")
