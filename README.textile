@@ -1,0 +1,98 @@
+CL-REDIS — a fast and robust Common Lisp client for Redis database (tested with Redis version 2.0.0-rc2)
+
+h2. Dependencies
+
+* "iolib":http://common-lisp.net/project/iolib/
+* "rutils":http://github.com/vseloved/rutils
+* only for tests: "nuts":http://github.com/vseloved/nuts, "flexi-streams":http://weitz.de/flexi-streams, "bordeaux-threads":http://common-lisp.net/project/bordeaux-threads
+
+h2. Usage
+
+# <p align="justify">Make sure a Redis server is running.</p>
+# <p align="justify">@(require 'cl-redis)@</p>
+# <p align="justify">Connect to the server to the given host and port with @(redis:connect :host <host> :port <port>)@ (@host@ defaults to 127.0.0.1 and @port@ defaults to 6739).</p>
+# <p align="justify">Interact with the server using the commands whose names are just Redis commands prepended with the prefix @*cmd-prefix*@, which defaults to @'red@. For example, @(redis:red-ping)@ => "PONG".</p>
+# <p align="justify">Disconnect from the server with @(redis:disconnect)@.</p>
+# <p align="justify">Alternatively, wrap the whole server-client interaction session into a @with-connection@ macro, which accepts the same arguments @connect@ does, opens a socket connection, executes the body of the macro with the current connection bound to this new connection, and ensures that the connection is closed afterwards.</p>
+
+h2. Pipelining
+
+For a better performance Redis allows to pipeline commands and delay receiving results until the end and do that in batch afterwards.  To support that there's @with-pipelining@ macro.  Compare execution times in the following examples (with pipelining and without: 6.567 secs vs. 2023.924 secs!):
+<pre><code>(let ((names (let (acc)
+               (dotimes (i 1000)
+                 (push (format nil "n~a" i) acc))
+               (nreverse acc)))
+      (valss (let (big-acc)
+               (dotimes (i 1000)
+                 (let (acc)
+                   (dotimes (i (random 100))
+                     (push (list (random 10) (format nil "n~a" i)) acc))
+                   (push (nreverse acc) big-acc)))
+               (nreverse big-acc))))
+  (time (with-connection ()
+          (with-pipelining (loop :for name :in names :for vals :in valss :do
+                              (dolist (val vals)
+                                (apply #'red-zadd name val))))
+          (red-zunionstore "result" (length names) names)
+          (red-zrange "result" 0 -1))))
+Evaluation took:
+  6.567 seconds of real time
+  3.900243 seconds of total run time (3.200200 user, 0.700043 system)
+  [ Run times consist of 0.264 seconds GC time, and 3.637 seconds non-GC time. ]
+  59.39% CPU
+  82 lambdas converted
+  13,102,611,585 processor cycles
+  274,398,496 bytes consed
+("n98" "n97" "n95" "n96" "n93" "n94" "n92" "n91" "n89" "n90" "n88" "n87" "n86"
+ "n85" "n82" "n83" "n84" "n81" "n80" "n77" "n75" "n79" "n78" "n76" "n73" "n74"
+ "n72" "n71" "n70" "n68" "n69" "n67" "n66" "n63" "n64" "n65" "n59" "n62" "n61"
+ "n58" "n60" "n57" "n54" "n56" "n55" "n50" "n53" "n52" "n51" "n48" "n49" "n47"
+ "n45" "n46" "n44" "n41" "n43" "n42" "n40" "n37" "n38" "n39" "n35" "n36" "n34"
+ "n32" "n33" "n31" "n30" "n29" "n27" "n26" "n28" "n22" "n21" "n25" "n24" "n23"
+ "n20" "n19" "n18" "n17" "n16" "n15" "n12" "n14" "n13" "n9" "n11" "n10" "n7"
+ "n8" "n4" "n6" "n2" "n5" "n1" "n3" "n0")
+CL-USER> (let ((names (let (acc)
+               (dotimes (i 1000)
+                 (push (format nil "n~a" i) acc))
+               (nreverse acc)))
+      (valss (let (big-acc)
+               (dotimes (i 1000)
+                 (let (acc)
+                   (dotimes (i (random 100))
+                     (push (list (random 10) (format nil "n~a" i)) acc))
+                   (push (nreverse acc) big-acc)))
+               (nreverse big-acc))))
+  (time (with-connection ()
+          (loop :for name :in names :for vals :in valss :do
+             (dolist (val vals)
+               (apply #'red-zadd name val)))
+          (red-zunionstore "result" (length names) names)
+          (red-zrange "result" 0 -1))))
+Evaluation took:
+  2023.924 seconds of real time
+  3.560222 seconds of total run time (2.976186 user, 0.584036 system)
+  [ Run times consist of 0.144 seconds GC time, and 3.417 seconds non-GC time. ]
+  0.18% CPU
+  72 lambdas converted
+  1,474,396,115,175 processor cycles
+  389,316,432 bytes consed
+</code></pre>
+
+h2. Extending
+
+p<>. There are 2 generic functions: @tell@ and @expect@, which implement different styles of Redis interactions according to the "protocol":http://code.google.com/p/redis/wiki/ProtocolSpecification. @tell@ specifies how a request to Redis is formatted and @expect@ — how the response is handled. The best way to implement another method on @expect@ is usually with @def-expect-method@, which arranges reading data from the socket and provides a variable @reply@, which holds the raw reply from the server with the initial character removed. For example:
+<pre><code>(def-expect-method :ok
+  (assert (string= reply "OK"))
+  reply)</code></pre>
+
+p<>. Redis operations are defined as functions with @def-cmd@ for which only types of interactions and arguments should be provided. @def-cmd@ prefixes all the defined functions' names with @*cmd-prefix*@, which defaults to @'red@. (Note, that  setting of @*cmd-prefix*@ will have its effects at compile time). An example of command definition is given below:
+<pre><code>(def-cmd KEYS (pattern)
+  "Return all the keys matching the given pattern."
+  :inline :list)</code></pre>
+(see commands.lisp for all defined commands) 
+
+h2. Debugging, testing and error recovery
+
+p<>. If @*echo-p*@ is set to @T@, all server-client communications will be echoed to the stream @*echo-stream*@, which defaults to @*standard-output*@. The default value of @*echo-p*@ is @NIL@, meaning no echoing.
+
+p<>. Error handling is mimicked after the "Postmodern":http://common-lisp.net/project/postmodern/ library. In particular, whenever an error occurs that breaks the communication stream, a condition of type @redis-connection-error@ is signaled offering a @:reconnect@ restart. Furthermore, @connect@ checks if a connection to Redis is already established, and offers two restarts (@:leave@ and @:replace@) if this is the case. When the server responses with an error reply (i.e., a reply that starts with @-@), a condition of type @redis-error-reply@ is signaled.

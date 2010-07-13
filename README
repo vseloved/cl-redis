@@ -1,5 +1,0 @@
-CL-REDIS -- a Redis client for Common Lisp
-
-Tested with version 2.0.0-rc2.
-
-See http://wiki.github.com/vseloved/cl-redis/ for documentation.
