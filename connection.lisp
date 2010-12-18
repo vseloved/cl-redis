@@ -169,4 +169,22 @@ connection. If connection is already established, reuse it."
   "Close and reopen the connection to Redis server."
   (reopen-connection *connection*))
 
+
+(defmacro with-pipelining (&body body)
+  "Delay execution of EXPECT's inside BODY to the end, so that all
+commands are first sent to the server and then their output is received
+and collected into a list.  So commands return :PIPELINED instead of the
+expected results."
+  (with-gensyms (old-expect pipeline)
+    `(let ((,old-expect (fdefinition 'expect))
+           ,pipeline)
+       (unwind-protect
+            (progn
+              (setf (fdefinition 'expect) (lambda (&rest args)
+                                            (push args ,pipeline)
+                                            :pipelined))
+              ,@body)
+         (setf (fdefinition 'expect) ,old-expect))
+       (mapcar #`(apply #'expect _) (nreverse ,pipeline)))))
+
 ;;; end

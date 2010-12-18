@@ -57,87 +57,61 @@ server."))
 
 ;; sending commands to the server
 
-(defgeneric tell (type cmd &rest args)
+(defgeneric tell (cmd &rest args)
   (:documentation "Send a command to Redis server over a socket connection.
-TYPE must be one of the keywords :INLINE, :BULK, or :MULTI.  Otherwise an ~
-error will be signalled.  CMD is the command name (a string or a symbol), ~
-and ARGS are its arguments (keyword arguments are also supported).  In the ~
-case of a :BULK command the last argument must be a string."))
+CMD is the command name (a string or a symbol), and ARGS are its arguments
+\(keyword arguments are also supported)."))
 
-(defmethod tell :around (type cmd &rest args)
-  (declare (ignore type args))
-  (let ((cmd (ppcre:split "-" (string cmd))))
-    (call-next-method)))
-
-(defmethod tell :after (type cmd &rest args)
-  (declare (ignore type cmd args))
+(defmethod tell :after (cmd &rest args)
+  (declare (ignore cmd args))
   (force-output (connection-socket *connection*)))
 
-(defmethod tell (type cmd &rest args)
-  (declare (ignore cmd args))
-  (error "Commands of type ~A are not supported." type))
-
-(defmethod tell ((type (eql :generic)) cmd &rest args)
+(defmethod tell (cmd &rest args)
   (format-redis-line "*~A" (1+ (length args)))
-  (mapcar #`((format-redis-line "$~A" (length _))
-             (format-redis-line "~A" _))
-          (cons (string cmd) args)))
+  (mapcar #`(let ((arg (princ-to-string _)))
+              (format-redis-line "$~A" (byte-length arg))
+              (format-redis-line arg))
+          (cons cmd args)))
 
-(defmethod tell ((type (eql :inline)) cmd &rest args)
-  (format-redis-line "~A~{ ~A~}" cmd args))
-
-(defmethod tell ((type (eql :bulk)) cmd &rest args)
-  (multiple-value-bind (args bulk) (butlast2 args)
-    (check-type bulk string)
-    (format-redis-line "~A~{ ~A~} ~A" cmd args (byte-length bulk))
-    (format-redis-line "~A" bulk)))
-
-(defmethod tell ((type (eql :multi)) cmd &rest args)
-  (let ((bulks (cons (string cmd) args)))
-    (format-redis-line "*~A" (length bulks))
-    (dolist (bulk bulks)
-      (format-redis-line "$~A" (byte-length bulk))
-      (format-redis-line "~A" bulk))))
-
-;; command-specific TELL methods
-
-(defmethod tell ((type (eql :inline)) (cmd (eql 'SORT)) &rest args)
+(defmethod tell ((cmd (eql 'SORT)) &rest args)
   (flet ((send-request (key &key by get desc alpha start end)
            (assert (or (and start end)
                        (and (null start) (null end))))
-           (format-redis-line "SORT ~a~:[~; BY ~:*~a~]~{ GET ~a~}~:[~; DESC~]~
-~:[~; ALPHA~]~:[~; LIMIT ~:*~a ~a~]"
-                             key by (mklist get) desc alpha start end)))
+           (apply #'tell "SORT"
+                  (nconc (list key)
+                         (when by (list "BY" by))
+                         (when get (list "GET" get))
+                         (when desc (list "DESC"))
+                         (when alpha (list "ALPHA"))
+                         (when start (list "LIMIT" start end))))))
     (apply #'send-request args)))
 
-(macrolet ((z...range-body ()
-             `(flet ((send-request (key start end &rest args &key withscores)
-                       (format-redis-line "~a ~a ~a ~a~:[~; WITHSCORES~]"
-                                         cmd key start end withscores)))
-                (apply #'send-request args))))
-  (defmethod tell ((type (eql :inline)) (cmd (eql 'ZRANGE)) &rest args)
-    (z...range-body))
-  (defmethod tell ((type (eql :inline)) (cmd (eql 'ZREVRANGE)) &rest args)
-    (z...range-body)))
+(flet ((send-request (cmd key start end &key withscores)
+         (apply #'tell (princ-to-string cmd)
+                (nconc (list key start end)
+                       (when withscores (list "WITHSCORES"))))))
+  (defmethod tell ((cmd (eql 'ZRANGE)) &rest args)
+    (apply #'send-request cmd args))
+  (defmethod tell ((cmd (eql 'ZREVRANGE)) &rest args)
+    (apply #'send-request cmd args)))
 
-(macrolet ((z...store-body ()
-             `(flet ((send-request (dstkey n keys
-                                           &rest args &key weights aggregate)
-                       (assert (integerp n))
-                       (assert (= n (length keys)))
-                       (when weights
-                         (assert (= (length keys) (length weights)))
-                         (assert (every #'numberp weights)))
-                       (when aggregate
-                         (assert (member aggregate '(:sum :min :max))))
-                       (format-redis-line "~a ~a ~a~:[~; ~:*~{~a ~}~]~
-~:[~;WEIGHTS ~:*~{~a ~}~]~:[~;AGGREGATE ~:*~a~]"
-                                         cmd dstkey n keys weights aggregate)))
-                (apply #'send-request args))))
-  (defmethod tell ((type (eql :inline)) (cmd (eql 'ZUNIONSTORE)) &rest args)
-    (z...store-body))
-  (defmethod tell ((type (eql :inline)) (cmd (eql 'ZINTERSTORE)) &rest args)
-    (z...store-body)))
+(flet ((send-request (cmd dstkey n keys &key weights aggregate)
+         (assert (integerp n))
+         (assert (= n (length keys)))
+         (when weights
+           (assert (= (length keys) (length weights)))
+           (assert (every #'numberp weights)))
+         (when aggregate
+           (assert (member aggregate '(:sum :min :max))))
+         (apply #'tell (princ-to-string cmd)
+                (nconc (list dstkey n)
+                       keys
+                       (when weights (cons "WEIGHTS" weights))
+                       (when aggregate (list "AGGREGATE" aggregate))))))
+  (defmethod tell ((cmd (eql 'ZUNIONSTORE)) &rest args)
+    (apply #'send-request cmd args))
+  (defmethod tell ((cmd (eql 'ZINTERSTORE)) &rest args)
+    (apply #'send-request cmd args)))
 
 
 ;; receiving replies 
@@ -263,22 +237,22 @@ byte."
 (defparameter *cmd-prefix* 'red
   "Prefix for functions names that implement Redis commands.")
 
-(defmacro def-cmd (cmd (&rest args) docstring cmd-type reply-type)
+(defmacro def-cmd (cmd (&rest args) reply-type docstring)
   "Define and export a function with the name <*CMD-REDIX*>-<CMD> for ~
-processing a Redis command CMD.  Here CMD-TYPE and REPLY-TYPE are the ~
-command and reply types respectively, ARGS are the command arguments, ~
-and DOCSTRING is the command documentation string."
+processing a Redis command CMD.  Here REPLY-TYPE is the expected reply ~
+format."
   (let ((cmd-name (intern (format nil "~a-~a" *cmd-prefix* cmd))))
     `(progn
        (defun ,cmd-name ,args
          ,docstring
-         (with-reconnect-restart *connection*
-           ,(if-it (position '&rest args)
-                   `(apply #'tell ,cmd-type ',cmd
-                           ,@(subseq args 0 it)
-                           ,(nth (1+ it) args))
-                   `(tell ,cmd-type ',cmd ,@args))
-           (expect ,reply-type)))
+         (return-from ,cmd-name
+           (with-reconnect-restart *connection*
+             ,(if-it (position '&rest args)
+                     `(apply #'tell ',cmd
+                             ,@(subseq args 0 it)
+                             ,(nth (1+ it) args))
+                     `(tell ',cmd ,@args))
+               (expect ,reply-type))))
        (export ',cmd-name :redis))))
 
 ;; pipelining
@@ -288,16 +262,22 @@ and DOCSTRING is the command documentation string."
 commands are first sent to the server and then their output is received
 and collected into a list.  So commands return :PIPELINED instead of the
 expected results."
-  (with-gensyms (old-expect pipeline)
+  (with-gensyms (old-expect old-select pipeline)
     `(let ((,old-expect (fdefinition 'expect))
+           (,old-select (fdefinition 'red-select))
            ,pipeline)
        (unwind-protect
             (progn
               (setf (fdefinition 'expect) (lambda (&rest args)
                                             (push args ,pipeline)
-                                            :pipelined))
+                                            :pipelined)
+                    (fdefinition 'red-select)
+                    (lambda (&rest args)
+                      (declare (ignore args))
+                      (error "Can't use RED-SELECT WITH-PIPELINING.")))
               ,@body)
-         (setf (fdefinition 'expect) ,old-expect))
+         (setf (fdefinition 'expect) ,old-expect
+               (fdefinition 'red-select) ,old-select))
        (mapcar #`(apply #'expect _) (nreverse ,pipeline)))))
 
 ;;; end

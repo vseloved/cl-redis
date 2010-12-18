@@ -14,48 +14,16 @@
   (with-connection ()
     (let ((*echo-p* t)
           (*echo-stream* (make-string-output-stream)))
-      (list
-       (check string=
-              (progn (tell :generic 'hget "h1" "f1")
-                     (get-output-stream-string *echo-stream*))
-              " > *3
+      (check string=
+             (progn (tell 'hget "h1" "f1")
+                    (get-output-stream-string *echo-stream*))
+             " > *3
  > $4
  > HGET
  > $2
  > h1
  > $2
  > f1
-")
-       (check string=
-              (progn (tell :inline 'ping)
-                     (get-output-stream-string *echo-stream*))
-              " > PING
-")
-       (check string=
-              (progn (tell :inline 'sort "a" :start "1" :end "2")
-                     (get-output-stream-string *echo-stream*))
-              " > SORT a LIMIT 1 2
-")
-       (check string=
-              (progn (tell :bulk 'set "a" "123")
-                     (get-output-stream-string *echo-stream*))
-              " > SET a 3
- > 123
-"))
-       (check string=
-              (progn (tell :multi 'mset "a" "123" "b" "456")
-                     (get-output-stream-string *echo-stream*))
-              " > *5
- > $4
- > MSET
- > $1
- > a
- > $3
- > 123
- > $1
- > b
- > $3
- > 456
 "))))
 
 (defun expect-from-str (expected input)
@@ -73,8 +41,8 @@
               (append (list (cons '*connection* *connection*)
                             (cons '*trace-output* *trace-output*))
                       bt:*default-special-bindings*))
-             (worker (bt:make-thread #`(expect expected))))
-        (mapcar #`(write-line _ client)
+             (worker (bt:make-thread (lambda () (expect expected)))))
+        (mapcar (lambda (x) (write-line x client))
                 (mklist input))
         (finish-output client)
         (bt:join-thread worker)))))
@@ -284,15 +252,15 @@
     (check string= "6"       (red-rpop "эл"))
     (check null              (red-blpop "l" 1))
     (check true              (red-rpush "l" "5"))
-    (check equal '("l" "5")  (red-blpop "l" "эл"))
-    (check equal '("эл" "3") (red-blpop "эл" "l"))
-    (check equal '("эл" "5") (red-brpop "эл" "l"))
+    (check equal '("l" "5")  (red-blpop "l" 1))
+    (check equal '("эл" "3") (red-blpop "эл" 1))
     (check true              (red-rpush "l" "0"))
     (check true              (red-rpush "l" "1"))
     (check true              (red-rpush "l" "2"))
     (check equal '("0" "1" "2")
                              (red-lrange "l" 0 -1))
     (check string= "4"       (red-lpop "эл"))
+    (check string= "5"       (red-lpop "эл"))
     (check null              (red-lrange "эл" 0 -1))
     (check string= "2"       (red-rpoplpush "l" "эл"))
     (check string= "1"       (red-rpoplpush "l" "l"))
@@ -498,11 +466,12 @@
                                  (red-subscribe "foo" "bar"))
      (check equal '("message" "foo" "test")
                                  (progn
-                                   (bt:make-thread #`(let ((*echo-p* nil))
+                                   (bt:make-thread (lambda ()
+                                                     (let ((*echo-p* nil))
                                                        (sleep 1)
                                                        (with-connection ()
                                                          (red-publish "foo"
-                                                                      "test"))))
+                                                                      "test")))))
                                    (expect :multi)))
      (check equal '(("unsubscribe" "bar" "1"))
                                  (red-unsubscribe "bar"))
@@ -512,11 +481,12 @@
                                  (red-psubscribe "news.*"))
      (check equal '("pmessage" "news.*" "news.1" "puf")
                                  (progn
-                                   (bt:make-thread #`(let ((*echo-p* nil))
+                                   (bt:make-thread (lambda ()
+                                                     (let ((*echo-p* nil))
                                                        (sleep 1)
                                                        (with-connection ()
                                                          (red-publish "news.1"
-                                                                      "puf"))))
+                                                                      "puf")))))
                                    (expect :multi)))
      (check equal '(("punsubscribe" "news.*" "0"))
                                  (red-punsubscribe))
