@@ -17,8 +17,10 @@ If *ECHOP-P* is not NIL, write that string to *ECHO-STREAM*, too."
   (let ((string (apply #'format nil fmt args))
         (redis-out (connection-socket *connection*)))
     (when *echo-p* (format *echo-stream* " > ~A~%" string))
-    (write-line string redis-out)
-    (finish-output redis-out)))
+    (write-sequence (babel:string-to-octets string
+                                            :encoding :utf-8)
+                    redis-out)
+    (terpri redis-out)))
 
 
 ;; conditions
@@ -68,9 +70,10 @@ CMD is the command name (a string or a symbol), and ARGS are its arguments
 
 (defmethod tell (cmd &rest args)
   (format-redis-line "*~A" (1+ (length args)))
-  (mapcar #`(let ((arg (princ-to-string _)))
+  (mapcar (lambda (arg)
+            (let ((arg (princ-to-string arg)))
               (format-redis-line "$~A" (byte-length arg))
-              (format-redis-line arg))
+              (format-redis-line "~A"  arg)))
           (cons cmd args)))
 
 (defmethod tell ((cmd (eql 'SORT)) &rest args)
@@ -114,7 +117,7 @@ CMD is the command name (a string or a symbol), and ARGS are its arguments
     (apply #'send-request cmd args)))
 
 
-;; receiving replies 
+;; receiving replies
 
 (defgeneric expect (type)
   (:documentation "Receive and process the reply of the given type
@@ -188,8 +191,7 @@ byte."
                     (let ((string (babel:octets-to-string octets
                                                           :encoding :utf-8)))
                       (when *echo-p* (format *echo-stream* "<  ~A~%" string))
-                      (if (string= string "nil")
-                          nil
+                      (if (string= string "nil") nil
                           (if ,reply-transform (funcall ,reply-transform string)
                               string))))))))
   (def-expect-method :bulk
@@ -231,7 +233,7 @@ byte."
   ;; rather than a single string
   (cl-ppcre:split " " (expect :bulk)))
 
-    
+
 ;; high-level command definition
 
 (defparameter *cmd-prefix* 'red
@@ -271,13 +273,13 @@ expected results."
               (setf (fdefinition 'expect) (lambda (&rest args)
                                             (push args ,pipeline)
                                             :pipelined)
-                    (fdefinition 'red-select)
-                    (lambda (&rest args)
-                      (declare (ignore args))
-                      (error "Can't use RED-SELECT WITH-PIPELINING.")))
+                    (fdefinition 'red-select) (lambda (&rest args)
+                                                (declare (ignore args))
+                                                (error "Can't use RED-SELECT in WITH-PIPELINING.")))
               ,@body)
          (setf (fdefinition 'expect) ,old-expect
                (fdefinition 'red-select) ,old-select))
-       (mapcar #`(apply #'expect _) (nreverse ,pipeline)))))
+       (mapcar (lambda (args) (apply #'expect arg))
+               (nreverse ,pipeline)))))
 
 ;;; end

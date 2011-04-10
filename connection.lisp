@@ -65,7 +65,7 @@ offering a :reconnect restart whose body is given by BODY."
 
 (defmethod initialize-instance :after ((connection redis-connection) &key)
   (open-connection connection))
-  
+
 (defun open-connection (connection)
   "Create a socket connection to the host and port of CONNECTION and
 set the socket of CONNECTION to the associated socket."
@@ -141,7 +141,7 @@ connection. If connection is already established, reuse it."
   `(if (connected-p) (progn ,@body)
        (with-connection (:host ,host :port ,port)
          ,@body)))
-       
+
 (defun connected-p ()
   "Is the current connection to Redis server still open?"
   (and *connection* (open-connection-p *connection*)))
@@ -168,23 +168,5 @@ connection. If connection is already established, reuse it."
 (defun reconnect ()
   "Close and reopen the connection to Redis server."
   (reopen-connection *connection*))
-
-
-(defmacro with-pipelining (&body body)
-  "Delay execution of EXPECT's inside BODY to the end, so that all
-commands are first sent to the server and then their output is received
-and collected into a list.  So commands return :PIPELINED instead of the
-expected results."
-  (with-gensyms (old-expect pipeline)
-    `(let ((,old-expect (fdefinition 'expect))
-           ,pipeline)
-       (unwind-protect
-            (progn
-              (setf (fdefinition 'expect) (lambda (&rest args)
-                                            (push args ,pipeline)
-                                            :pipelined))
-              ,@body)
-         (setf (fdefinition 'expect) ,old-expect))
-       (mapcar #`(apply #'expect _) (nreverse ,pipeline)))))
 
 ;;; end

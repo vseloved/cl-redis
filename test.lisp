@@ -15,15 +15,16 @@
     (let ((*echo-p* t)
           (*echo-stream* (make-string-output-stream)))
       (check string=
-             (progn (tell 'hget "h1" "f1")
+             (progn (tell 'hget "h1" (format nil "~A~%~B" "f1" "~"))
                     (get-output-stream-string *echo-stream*))
              " > *3
  > $4
  > HGET
  > $2
  > h1
- > $2
+ > $4
  > f1
+~
 "))))
 
 (defun expect-from-str (expected input)
@@ -67,7 +68,7 @@
                                                 '("*3" "$9" "subscribe"
                                                   "$5" "chan1" ":1"
                                                   "*3" "$9" "subscribe"
-                                                  "$5" "chan2" ":2"))))  
+                                                  "$5" "chan2" ":2"))))
 
 (defun find-s (seq str)
   (true (find str seq :test #'string=)))
@@ -155,8 +156,8 @@
     (check true              (red-expire "це" 600))
     (check < 595             (red-ttl "c"))
     (check < 595             (red-ttl "це"))
-    (check true              (red-mset "k1" "v1" "k2" "v2")) 
-    (check true              (red-mset "ка1" "ве1" "ка2" "ве2")) 
+    (check true              (red-mset "k1" "v1" "k2" "v2"))
+    (check true              (red-mset "ка1" "ве1" "ка2" "ве2"))
     (check null              (red-msetnx "k1" "w1" "k3" "v3"))
     (check null              (red-msetnx "ка1" "дубльве1" "ка3" "ве3"))
     (check null              (red-exists "k3"))
@@ -415,9 +416,9 @@
     (check true                    (red-set "object_3" "o3"))
     (check true                    (red-set "об'єкт_3" "о3"))
     (check true                    (red-set "weight_1" "47"))
-    (check true                    (red-set "вага_1" "47"))    
+    (check true                    (red-set "вага_1" "47"))
     (check true                    (red-set "weight_2" "13"))
-    (check true                    (red-set "вага_2" "13"))    
+    (check true                    (red-set "вага_2" "13"))
     (check true                    (red-set "weight_3" "32"))
     (check true                    (red-set "вага_3" "32"))
     (check equal '("1" "2" "3")    (red-sort "numbers"))
@@ -518,6 +519,6 @@
     (terpri)
     (terpri)
     (values)))
-      
+
 
 ;;; end
