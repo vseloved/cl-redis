@@ -4,7 +4,7 @@
 (in-package :asdf)
 
 (defsystem #:cl-redis
-  :version '(2 0 1)
+  :version "2.0.2"
   :maintainer "Vsevolod Dyomkin <vseloved@gmail.com>"
   :licence "MIT"
   :description "Redis database client, using usocket interface."
@@ -24,7 +24,7 @@
 
 #+nuts
 (defsystem #:cl-redis-test
-  :version '(1 6 0)
+  :version "1.6.0"
   :maintainer "Vsevolod Dyomkin <vseloved@gmail.com>"
   :licence "MIT"
   :description "CL-Redis test suite"

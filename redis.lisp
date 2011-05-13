@@ -279,7 +279,7 @@ expected results."
               ,@body)
          (setf (fdefinition 'expect) ,old-expect
                (fdefinition 'red-select) ,old-select))
-       (mapcar (lambda (args) (apply #'expect arg))
+       (mapcar (lambda (args) (apply #'expect args))
                (nreverse ,pipeline)))))
 
 ;;; end

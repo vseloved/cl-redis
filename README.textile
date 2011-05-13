@@ -3,6 +3,7 @@ CL-REDIS — a fast and robust Common Lisp client for Redis database (tested wit
 h2. Dependencies
 
 * "iolib":http://common-lisp.net/project/iolib/
+* "babel":http://common-lisp.net/project/babel/
 * "rutils":http://github.com/vseloved/rutils
 * only for tests: "nuts":http://github.com/vseloved/nuts, "flexi-streams":http://weitz.de/flexi-streams, "bordeaux-threads":http://common-lisp.net/project/bordeaux-threads
 
@@ -90,7 +91,7 @@ p<>. Redis operations are defined as functions with @def-cmd@ for which only typ
 <pre><code>(def-cmd KEYS (pattern)
   "Return all the keys matching the given pattern."
   :inline :list)</code></pre>
-(see commands.lisp for all defined commands) 
+(see commands.lisp for all defined commands)
 
 h2. Debugging, testing and error recovery
 
