@@ -493,6 +493,12 @@
                                  (red-punsubscribe))
      (check = 0                  (red-publish "test" "test")))))
 
+(deftest pipelining ()
+  (with-connection ()
+    (check equal '("PONG" "PONG") (with-pipelining
+                                    (red-ping)
+                                    (red-ping)))))
+
 (defun run-tests (&key echo-p)
   (let ((*echo-p* echo-p))
     (terpri)
@@ -512,7 +518,8 @@
                                 h-commands
                                 sort
                                 transactions
-                                #+nil pubsub))
+                                pubsub
+                                pipelining))
                "OK"
                (format nil "some tests failed. See log file for details: ~a"
                        *log-out*)))

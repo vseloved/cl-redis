@@ -116,6 +116,9 @@ CMD is the command name (a string or a symbol), and ARGS are its arguments
   (defmethod tell ((cmd (eql 'ZINTERSTORE)) &rest args)
     (apply #'send-request cmd args)))
 
+(defmethod tell :around ((cmd (eql 'SELECT)) &rest args)
+  (if *pipelined* (error "Can't use SELECT inside WITH-PIPELINING.")
+      (call-next-method)))
 
 ;; receiving replies
 
@@ -123,12 +126,21 @@ CMD is the command name (a string or a symbol), and ARGS are its arguments
   (:documentation "Receive and process the reply of the given type
 from Redis server."))
 
+(defmethod expect :around (type)
+  (if *pipelined*
+      (progn (push type *pipeline*)
+             :pipelined)
+      (call-next-method)))
+
 (eval-always
   (defmacro with-redis-in ((line char) &body body)
-    `(let* ((,line (read-line (connection-socket *connection*)))
-            (,char (char ,line 0)))
-       (when *echo-p* (format *echo-stream* "<  ~A~%" ,line))
-       ,@body))
+    `(if-it (peek-char nil (connection-socket *connection*) nil nil)
+            (let ((,line (read-line (connection-socket *connection*)))
+                  (,char it))
+              (when *echo-p* (format *echo-stream* "<  ~A~%" ,line))
+              ,@body)
+            (error 'redis-bad-reply
+                   :message (format nil "Recieved empty string from server."))))
 
   (defmacro def-expect-method (type &body body)
     "Define a specialized EXPECT method.  BODY may refer to the ~
@@ -136,7 +148,7 @@ variable REPLY, which is bound to the reply received from Redis ~
 server with the first character removed."
     (with-unique-names (line char)
       `(defmethod expect ((type (eql ,type)))
-         ,(format nil "Receive and process the reply of type ~a."
+         ,(format nil "Receive and process the reply of type ~A."
                   type)
          (with-redis-in (,line ,char)
            (let ((reply (subseq ,line 1)))
@@ -165,8 +177,8 @@ initial reply byte."
       (#\- (error 'redis-error-reply :message (subseq line 1)))
       (#\+ (subseq line 1))
       (otherwise (error 'redis-bad-reply
-                        :message (format nil "Received ~C as the initial reply ~
-byte."
+                        :message (format nil
+                                         "Received ~C as the initial reply byte."
                                          char))))))
 
 (def-expect-method :inline
@@ -240,10 +252,10 @@ byte."
   "Prefix for functions names that implement Redis commands.")
 
 (defmacro def-cmd (cmd (&rest args) reply-type docstring)
-  "Define and export a function with the name <*CMD-REDIX*>-<CMD> for ~
-processing a Redis command CMD.  Here REPLY-TYPE is the expected reply ~
+  "Define and export a function with the name <*CMD-REDIX*>-<CMD> for
+processing a Redis command CMD.  Here REPLY-TYPE is the expected reply
 format."
-  (let ((cmd-name (intern (format nil "~a-~a" *cmd-prefix* cmd))))
+  (let ((cmd-name (intern (format nil "~:@(~A-~A~)" *cmd-prefix* cmd))))
     `(progn
        (defun ,cmd-name ,args
          ,docstring
@@ -254,32 +266,26 @@ format."
                              ,@(subseq args 0 it)
                              ,(nth (1+ it) args))
                      `(tell ',cmd ,@args))
-               (expect ,reply-type))))
+             (prog1 (expect ,reply-type)
+               (unless *pipelined*
+                 (clear-input (connection-socket *connection*)))))))
        (export ',cmd-name :redis))))
 
+
 ;; pipelining
+
+(defvar *pipelined* nil)
+(defvar *pipeline* nil)
 
 (defmacro with-pipelining (&body body)
   "Delay execution of EXPECT's inside BODY to the end, so that all
 commands are first sent to the server and then their output is received
 and collected into a list.  So commands return :PIPELINED instead of the
 expected results."
-  (with-gensyms (old-expect old-select pipeline)
-    `(let ((,old-expect (fdefinition 'expect))
-           (,old-select (fdefinition 'red-select))
-           ,pipeline)
-       (unwind-protect
-            (progn
-              (setf (fdefinition 'expect) (lambda (&rest args)
-                                            (push args ,pipeline)
-                                            :pipelined)
-                    (fdefinition 'red-select) (lambda (&rest args)
-                                                (declare (ignore args))
-                                                (error "Can't use RED-SELECT in WITH-PIPELINING.")))
-              ,@body)
-         (setf (fdefinition 'expect) ,old-expect
-               (fdefinition 'red-select) ,old-select))
-       (mapcar (lambda (args) (apply #'expect args))
-               (nreverse ,pipeline)))))
+  `(let (*pipeline*)
+     (let ((*pipelined* t))
+       ,@body)
+     (mapcar #'expect
+             (nreverse *pipeline*))))
 
 ;;; end

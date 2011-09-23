@@ -4,10 +4,10 @@
 (in-package :asdf)
 
 (defsystem #:cl-redis
-  :version "2.0.2"
+  :version "2.0.3"
   :maintainer "Vsevolod Dyomkin <vseloved@gmail.com>"
   :licence "MIT"
-  :description "Redis database client, using usocket interface."
+  :description "Redis database client, using iolib interface."
   :depends-on (#:rutils #:cl-ppcre #:babel #:iolib)
   :serial t
   :components ((:file "package")
@@ -20,11 +20,11 @@
 (defmethod perform ((o test-op)
                     (c (eql (find-system 'cl-redis))))
   (operate 'load-op '#:cl-redis)
-  (operate 'test-op '#:cl-redis-test :force t))
+  (operate 'test-op '#:cl-redis-test))
 
 #+nuts
 (defsystem #:cl-redis-test
-  :version "1.6.0"
+  :version "1.7.0"
   :maintainer "Vsevolod Dyomkin <vseloved@gmail.com>"
   :licence "MIT"
   :description "CL-Redis test suite"
