@@ -5,7 +5,7 @@
 
 
 ;; utils
-(declaim (optimize (safety 3) (speed 0) (space 0) (debug 3)))
+;(declaim (optimize (safety 3) (speed 0) (space 0) (debug 3)))
 (defun byte-length (string)
   "Return the length of STRING if encoded using utf-8 external format."
   (length (babel:string-to-octets string)))
@@ -130,10 +130,11 @@ from Redis server."))
 (eval-always
   (defmacro with-redis-in ((line char) &body body)
     `(let ((,line (read-line (connection-socket *connection*))))
-       (when (> (length ,line) 0)
+       (if (> (length ,line) 0)
 	 (let ((,char (char ,line 0)))
 	   (when *echo-p* (format *echo-stream* "<  ~A~%" ,line))
-	   ,@body))))
+	   ,@body)
+	 "")))
 
   (defmacro def-expect-method (type &body body)
     "Define a specialized EXPECT method.  BODY may refer to the ~
