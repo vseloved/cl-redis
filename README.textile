@@ -1,4 +1,4 @@
-CL-REDIS — a fast and robust Common Lisp client for Redis database (tested with Redis version 2.0.0-rc2)
+CL-REDIS — a fast and robust Common Lisp client for Redis database (tested with Redis version 2.2.14)
 
 h2. Dependencies
 
@@ -82,7 +82,7 @@ Note, that @with-pipelining@ calls may nest.
 
 h2. Extending
 
-p<>. There are 2 generic functions: @tell@ and @expect@, which implement different styles of Redis interactions according to the "protocol":http://code.google.com/p/redis/wiki/ProtocolSpecification. @tell@ specifies how a request to Redis is formatted and @expect@ — how the response is handled. The best way to implement another method on @expect@ is usually with @def-expect-method@, which arranges reading data from the socket and provides a variable @reply@, which holds the raw reply from the server with the initial character removed. For example:
+p<>. There are 2 generic functions: @tell@ and @expect@, which implement different styles of Redis interactions according to the "Redis wire protocol":http://redis.io/topics/protocol. @tell@ specifies how a request to Redis is formatted and @expect@ — how the response is handled. The best way to implement another method on @expect@ is usually with @def-expect-method@, which arranges reading data from the socket and provides a variable @reply@, which holds the raw reply from the server with the initial character removed. For example:
 <pre><code>(def-expect-method :ok
   (assert (string= reply "OK"))
   reply)</code></pre>
