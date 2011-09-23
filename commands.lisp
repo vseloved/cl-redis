@@ -51,7 +51,8 @@ already exist.")
   "Get the time to live in seconds of a key.")
 
 (def-cmd SELECT (index) :status
-  "Select the DB having the specified index.")
+	 "Select the DB having the specified index."
+	 (if *pipelining?* (progn (error "Cannot use select in a pipeline") nil) T))
 
 (def-cmd MOVE (key dbindex) :integer
   "Move the key from the currently selected DB to the DB having as
