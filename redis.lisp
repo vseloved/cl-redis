@@ -119,7 +119,11 @@ CMD is the command name (a string or a symbol), and ARGS are its arguments
 
 ;; receiving replies
 
-(defgeneric expect (type)
+
+
+
+
+(defgeneric %expect (type)
   (:documentation "Receive and process the reply of the given type
 from Redis server."))
 
@@ -135,7 +139,7 @@ from Redis server."))
 variable REPLY, which is bound to the reply received from Redis ~
 server with the first character removed."
     (with-unique-names (line char)
-      `(defmethod expect ((type (eql ,type)))
+      `(defmethod %expect ((type (eql ,type)))
          ,(format nil "Receive and process the reply of type ~a."
                   type)
          (with-redis-in (,line ,char)
@@ -149,16 +153,16 @@ server with the first character removed."
 initial reply byte."
                                                       ,char)))))))))))
 
-(defmethod expect ((type (eql :anything)))
+(defmethod %expect ((type (eql :anything)))
   "Receive and process status reply, which is just a string, preceeded with +."
   (case (peek-char nil (connection-socket *connection*))
-    (#\+ (expect :status))
-    (#\: (expect :inline))
-    (#\$ (expect :bulk))
-    (#\* (expect :multi))
-    (otherwise (expect :status))))  ; will do error-signalling
+    (#\+ (%expect :status))
+    (#\: (%expect :inline))
+    (#\$ (%expect :bulk))
+    (#\* (%expect :multi))
+    (otherwise (%expect :status))))  ; will do error-signalling
 
-(defmethod expect ((type (eql :status)))
+(defmethod %expect ((type (eql :status)))
   "Receive and process status reply, which is just a string, preceeded with +."
   (with-redis-in (line char)
     (case char
@@ -203,20 +207,20 @@ byte."
   (let ((n (parse-integer reply)))
     (unless (= n -1)
       (loop :repeat n
-         :collect (expect :bulk)))))
+         :collect (%expect :bulk)))))
 
 (def-expect-method :queued
   (let ((n (parse-integer reply)))
     (unless (= n -1)
       (loop :repeat n
-         :collect (expect :anything)))))
+         :collect (%expect :anything)))))
 
-(defmethod expect ((type (eql :pubsub)))
+(defmethod %expect ((type (eql :pubsub)))
   (let ((in (connection-socket *connection*)))
     (loop :collect (with-redis-in (line char)
-                     (list (expect :bulk)
-                           (expect :bulk)
-                           (expect :inline)))
+                     (list (%expect :bulk)
+                           (%expect :bulk)
+                           (%expect :inline)))
        :do (let ((next-char (read-char-no-hang in)))
              (if next-char (progn (unread-char next-char in)
                                   ;; after unread-char #\Newline is
@@ -224,15 +228,30 @@ byte."
                                   (read-char in))
                  (loop-finish))))))
 
-(defmethod expect ((type (eql :end)))
+(defmethod %expect ((type (eql :end)))
   ;; Used for commands QUIT and SHUTDOWN (does nothing)
   )
 
-(defmethod expect ((type (eql :list)))
+(defmethod %expect ((type (eql :list)))
   ;; Used to make Redis KEYS command return a list of strings (keys)
   ;; rather than a single string
-  (cl-ppcre:split " " (expect :bulk)))
+  (cl-ppcre:split " " (%expect :bulk)))
 
+(defun flush-connection ()
+  (let ((in (connection-socket *connection*)))
+    (clear-input in)))
+
+(defvar *pipeline* nil)
+(defvar *expect-variable* #'%expect)
+
+
+(defun expect (type)
+  (if *expect-variable*
+      (prog1 (funcall *expect-variable* type)
+	     (flush-connection))
+      (funcall (lambda (&rest args)
+		 (push args *pipeline*)
+		 :pipelined) type)))
 
 ;; high-level command definition
 
@@ -264,22 +283,11 @@ format."
 commands are first sent to the server and then their output is received
 and collected into a list.  So commands return :PIPELINED instead of the
 expected results."
-  (with-gensyms (old-expect old-select pipeline)
-    `(let ((,old-expect (fdefinition 'expect))
-           (,old-select (fdefinition 'red-select))
-           ,pipeline)
-       (unwind-protect
-            (progn
-              (setf (fdefinition 'expect) (lambda (&rest args)
-                                            (push args ,pipeline)
-                                            :pipelined)
-                    (fdefinition 'red-select) (lambda (&rest args)
-                                                (declare (ignore args))
-                                                (error "Can't use RED-SELECT in WITH-PIPELINING.")))
-              ,@body)
-         (setf (fdefinition 'expect) ,old-expect
-               (fdefinition 'red-select) ,old-select))
-       (mapcar (lambda (args) (apply #'expect args))
-               (nreverse ,pipeline)))))
+    `(let (redis::*pipeline*)
+       (let ((*expect-variable* nil))
+	 ,@body)
+       (prog1 (mapcar (lambda (args) (apply #'%expect args))
+		      (nreverse redis::*pipeline*))
+	 (flush-connection))))
 
 ;;; end
