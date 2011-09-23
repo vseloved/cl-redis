@@ -24,7 +24,7 @@
 
 #+nuts
 (defsystem #:cl-redis-test
-  :version "1.7.0"
+  :version "1.7.1"
   :maintainer "Vsevolod Dyomkin <vseloved@gmail.com>"
   :licence "MIT"
   :description "CL-Redis test suite"

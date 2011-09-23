@@ -495,9 +495,14 @@
 
 (deftest pipelining ()
   (with-connection ()
-    (check equal '("PONG" "PONG") (with-pipelining
-                                    (red-ping)
-                                    (red-ping)))))
+    (red-select 15)
+    (red-flushdb)
+    (cumulative-and
+     (check equal '("PONG" 0) (with-pipelining
+                                (red-ping)
+                                (red-dbsize)))
+     (check-errs (with-pipelining
+                   (red-select 2))))))
 
 (defun run-tests (&key echo-p)
   (let ((*echo-p* echo-p))
