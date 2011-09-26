@@ -4,6 +4,7 @@
 
 (in-package :redis)
 
+
 ;; Connection handling
 
 (def-cmd PING () :status
@@ -15,9 +16,15 @@
 (def-cmd AUTH (pass) :status
   "Simple password authentication if enabled.")
 
+(def-cmd SELECT (index) :status
+  "Select the DB having the specified index.")
 
-;; Commands operating on all the kind of values
-    
+(def-cmd ECHO (message) :bulk
+  "Returns message.")
+
+
+;; Any key type commands
+
 (def-cmd EXISTS (key) :boolean
   "Test if a key exists.")
 
@@ -40,31 +47,74 @@ already exists.")
 (def-cmd RENAMENX (oldname newname) :boolean
   "Rename the old key in the new one, if the newname key does not
 already exist.")
-  
-(def-cmd DBSIZE () :integer
-  "Return the number of keys in the current db.")
 
-(def-cmd EXPIRE (key secs) :boolean 
-  "Set a time to live in seconds on a key.")
+(def-cmd EXPIRE (key secs) :boolean
+  "Set a time to live in SECS on KEY.")
+
+(def-cmd EXPIREAT (key timestamp) :boolean
+  "Set a timeout on KEY. After the timeout has expired, the key will
+automatically be deleted.
+EXPIREAT has the same effect and semantic as EXPIRE, but instead of
+specifying the number of seconds representing the TTL, it takes
+an absolute UNIX timestamp (seconds since January 1, 1970).
+As in the case of EXPIRE command, if key is updated before the timeout has
+expired, then the timeout is removed as if the PERSIST command was invoked
+on KEY.")
+
+(def-cmd PERSIST (key) :boolean
+  "Remove the existing timeout on KEY.")
 
 (def-cmd TTL (key) :integer
-  "Get the time to live in seconds of a key.")
+  "Get the time to live in seconds of KEY.")
 
-(def-cmd SELECT (index) :status
-  "Select the DB having the specified index.")
-
-(def-cmd MOVE (key dbindex) :integer
+(def-cmd MOVE (key dbindex) :boolean
   "Move the key from the currently selected DB to the DB having as
 index dbindex.")
 
-(def-cmd FLUSHDB () :status
-  "Remove all the keys of the currently selected DB.")
+(def-cmd SORT (key &rest args
+                   &key  by     ; A pattern.
+                         start
+                         end
+                         get    ; A pattern or a list of patterns.
+                         desc   ; Should sort be descending?
+                         alpha  ; Should sort be lexicographical?
+                         ) :multi
+  "Sort a Set or a List accordingly to the specified parameters.")
 
-(def-cmd FLUSHALL () :status
-  "Remove all the keys from all the databases.")
+(def-cmd OBJECT-REFCOUNT (key) :integer
+  "The OBJECT command allows to inspect the internals of Redis Objects
+associated with keys. It is useful for debugging or to understand if your keys
+are using the specially encoded data types to save space. Your application may
+also use the information reported by the OBJECT command to implement application
+level key eviction policies when using Redis as a Cache.
+
+OBJECT REFCOUNT <key> returns the number of references of the value associated
+with the specified key.")
+
+(def-cmd OBJECT-ENCODING (key) :bulk
+  "The OBJECT command allows to inspect the internals of Redis Objects
+associated with keys. It is useful for debugging or to understand if your keys
+are using the specially encoded data types to save space. Your application may
+also use the information reported by the OBJECT command to implement application
+level key eviction policies when using Redis as a Cache.
+
+OBJECT ENCODING <key> returns the kind of internal representation used in order
+to store the value associated with a key.")
+
+(def-cmd OBJECT-IDLETIME (key) :integer
+  "The OBJECT command allows to inspect the internals of Redis Objects
+associated with keys. It is useful for debugging or to understand if your keys
+are using the specially encoded data types to save space. Your application may
+also use the information reported by the OBJECT command to implement application
+level key eviction policies when using Redis as a Cache.
+
+OBJECT IDLETIME <key> returns the number of seconds since the object stored
+at the specified key is idle (not requested by read or write operations). While
+the value is returned in seconds the actual resolution of this timer is 10
+seconds, but may vary in future implementations.")
 
 
-;; Commands operating on string values
+;; String commands
 
 (def-cmd SET (key value) :status
   "Set a key to a string value.")
@@ -82,7 +132,15 @@ index dbindex.")
   "Set a key to a string value if the key does not exist.")
 
 (def-cmd SETEX (key time value) :status
-  "Set+Expire combo command")
+  "Set KEY to hold the string VALUE and set KEY to timeout after a given number
+of seconds. This command is equivalent to executing the following commands:
+    SET mykey value
+    EXPIRE mykey seconds
+SETEX is atomic, and can be reproduced by using the previous two commands inside
+an MULTI/EXEC block. It is provided as a faster alternative to the given
+sequence of operations, because this operation is very common when Redis is used
+as a cache.
+An error is returned when seconds is invalid.")
 
 (def-cmd MSET (&rest key-value-plist) :status
   "Set multiple keys to multiple values in a single atomic operation.")
@@ -107,16 +165,90 @@ if none of the keys already exist.")
   "Append the specified string to the string stored at key.")
 
 (def-cmd SUBSTR (key start end) :bulk
-  "Return a substring out of a larger string.")
+  "Return a substring out of a larger string.
+Warning: left for backwards compatibility. It is now called: GETRANGE.")
+
+(def-cmd STRLEN (key) :integer
+  "Returns the length of the string value stored at KEY.")
+
+(def-cmd SETBIT (key offset value) :integer
+  "Sets or clears the bit at OFFSET in the string value stored at KEY.")
+
+(def-cmd GETBIT (key offset) :integer
+  "Returns the bit value at OFFSET in the string value stored at KEY.")
+
+(def-cmd SETRANGE (key offset value) :integer
+  "Overwrites part of the string stored at KEY, starting at the specified
+OFFSET, for the entire length of VALUE. If the OFFSET is larger than the
+current length of the string at KEY, the string is padded with zero-bytes
+to make OFFSET fit. Non-existing keys are considered as empty strings,
+so this command will make sure it holds a string large enough to be able
+to set value at OFFSET. Note that the maximum OFFSET that you can set
+is 229^-1 (536870911), as Redis Strings are limited to 512 megabytes.")
+
+(def-cmd GETRANGE (key offset value) :bulk
+  "Returns the substring of the string value stored at key, determined by
+the offsets START and END (both are inclusive). Negative offsets can be
+used in order to provide an offset starting from the end of the string.
+So -1 means the last character, -2 the penultimate and so forth.")
 
 
-;; Commands operating on lists
+;; Hash commands
+
+(def-cmd HSET (key field value) :boolean
+  "Set the hash FIELD to the specified VALUE. Creates the hash if needed.")
+
+(def-cmd HSETNX (key field value) :boolean
+  "Set the hash FIELD to the specified VALUE, if the KEY doesn't exist yet.")
+
+(def-cmd HGET (key field) :bulk
+  "Retrieve the value of the specified hash FIELD.")
+
+(def-cmd HMSET (key &rest fields-and-values) :status
+  "Set the hash FIELDS to their respective VALUES.")
+
+(def-cmd HMGET (key &rest fields) :multi
+  "Get the hash values associated with the specified fields.")
+
+(def-cmd HINCRBY (key field integer) :integer
+  "Increment the integer value of the hash at KEY on FIELD with INTEGER.")
+
+(def-cmd HEXISTS (key field) :boolean
+  "Test for existence of a specified FIELD in a hash.")
+
+(def-cmd HDEL (key field) :boolean
+  "Remove the specified FIELD from a hash.")
+
+(def-cmd HLEN (key) :integer
+  "Return the number of items in a hash.")
+
+(def-cmd HKEYS (key) :multi
+  "Return all the fields in a hash.")
+
+(def-cmd HVALS (key) :multi
+  "Return all the values in a hash.")
+
+(def-cmd HGETALL (key) :multi
+  "Return all the fields and associated values in a hash.")
+
+
+;; List commands
 
 (def-cmd RPUSH (key value) :integer
-  "Append an element to the tail of the List value at key.")
-  
+  "Append an element to the tail of the list value at KEY.")
+
 (def-cmd LPUSH (key value) :integer
-  "Append an element to the head of the List value at key.")
+  "Append an element to the head of the list value at KEY.")
+
+(def-cmd RPUSHX (key value) :integer
+  "Inserts value at the tail of the list stored at KEY, only if KEY
+already exists and holds a list. In contrary to RPUSH, no operation
+will be performed when KEY does not yet exist.")
+
+(def-cmd LPUSHX (key value) :integer
+  "Inserts value at the head of the list stored at KEY, only if KEY
+already exists and holds a list. In contrary to LPUSH, no operation
+will be performed when KEY does not yet exist.")
 
 (def-cmd LLEN (key) :integer
   "Return the length of the List value at key.")
@@ -124,7 +256,7 @@ if none of the keys already exist.")
 (def-cmd LRANGE (key start end) :multi
   "Return a range of elements from the List at key.")
 
-(def-cmd LTRIM (key start end) :status 
+(def-cmd LTRIM (key start end) :status
   "Trim the list at key to the specified range of elements.")
 
 (def-cmd LINDEX (key index) :bulk
@@ -149,12 +281,35 @@ the List at key.")
 (def-cmd BRPOP (&rest keys-and-timeout) :multi
   "Blocking RPOP.")
 
-(def-cmd RPOPLPUSH (srckey dstkey) :bulk
-  "Return and remove (atomically) the last element of the source List stored
-at SRCKEY and push the same element to the destination List stored at DSTKEY.")
+(def-cmd RPOPLPUSH (source destination) :bulk
+  "Atomically returns and removes the last element (tail) of the list
+stored at SOURCE, and pushes the element at the first element (head) of the list
+stored at DESTINATION.
+For example: consider SOURCE holding the list a,b,c, and DESTINATION holding
+the list x,y,z. Executing RPOPLPUSH results in SOURCE holding a,b and
+DESTINATION holding c,x,y,z.
+If SOURCE does not exist, the value nil is returned and no operation is
+performed. If SOURCE and DESTINATION are the same, the operation is equivalent
+to removing the last element from the list and pushing it as first element
+of the list, so it can be considered as a list rotation command.")
+
+(def-cmd BRPOPLPUSH (source destination timeout) :anything  ; bulk or null multi-bulk
+  "BRPOPLPUSH is the blocking variant of RPOPLPUSH. When source contains
+elements, this command behaves exactly like RPOPLPUSH. When source is empty,
+Redis will block the connection until another client pushes to it or until
+TIMEOUT is reached. A TIMEOUT of zero can be used to block indefinitely.
+See RPOPLPUSH for more information.")
+
+(def-cmd LINSERT (key before/after pivot value) :integer
+  "Inserts VALUE in the list stored at KEY either BEFORE or AFTER
+the reference value PIVOT. When KEY does not exist, it is considered an empty
+list and no operation is performed. An error is returned when KEY exists,
+but does not hold a list value PIVOT.
+
+Note: before/after can only have 2 values: :before or :after.")
 
 
-;; Commands operating on sets
+;; Set commands
 
 (def-cmd SADD (key member) :boolean
   "Add the specified member to the Set value at key.")
@@ -167,7 +322,7 @@ at SRCKEY and push the same element to the destination List stored at DSTKEY.")
 
 (def-cmd SMOVE (srckey dstkey member) :boolean
   "Move the specified member from one Set to another atomically.")
-  
+
 (def-cmd SCARD (key) :integer
   "Return the number of elements (the cardinality) of the Set at key.")
 
@@ -204,7 +359,7 @@ Sets key2, ..., keyN.")
   "Return a random member of the Set value at KEY.")
 
 
-;; Commands operating on sorted sets (zsets)
+;; Sorted set (zset) commands
 
 (def-cmd ZADD (key score member) :boolean
   "Add the specified MEMBER to the Set value at KEY or update the
@@ -234,12 +389,32 @@ with scores being ordered from high to low.")
 ZRANGE, but the sorted set is ordered in traversed in reverse order,
 from the greatest to the smallest score.")
 
-(def-cmd ZRANGEBYSCORE (key min max) :multi
-  "Return all the elements with score >= MIN and score <= MAX (a range
-query) from the sorted set.")
+(def-cmd ZRANGEBYSCORE (key min max &rest args &key withscores limit) :multi
+  "Returns all the elements in the sorted set at KEY with a score between
+MIN and MAX (including elements with score equal to MIN or MAX).
+The elements are considered to be ordered from low to high scores.
+The elements having the same score are returned in lexicographical order (this
+follows from a property of the sorted set implementation in Redis and does not
+involve further computation).
+The optional LIMIT argument can be used to only get a range of the matching
+elements (similar to SELECT LIMIT offset, count in SQL).
+The optional WITHSCORES argument makes the command return both the element and
+its score, instead of the element alone.")
+
+(def-cmd ZREVRANGEBYSCORE (key max min &rest args &key withscores limit) :multi
+  "Returns all the elements in the sorted set at KEY with a score between
+MAX and MIN (including elements with score equal to MAX or MIN).
+In contrary to the default ordering of sorted sets, for this command the
+elements are considered to be ordered from high to low scores.
+The elements having the same score are returned in reverse lexicographical order.
+Apart from the reversed ordering, ZREVRANGEBYSCORE is similar to ZRANGEBYSCORE.")
 
 (def-cmd ZCARD (key) :integer
   "Return the cardinality (number of elements) of the sorted set at KEY.")
+
+(def-cmd ZCOUNT (key min max) :integer
+  "Returns the number of elements in the sorted set at KEY with a score between
+MIN and MAX.")
 
 (def-cmd ZSCORE (key element) :float
   "Return the score associated with the specified ELEMENT of the
@@ -262,56 +437,7 @@ weight and aggregate.")
 weight and aggregate.")
 
 
-;; Commands operating on hashes
-
-(def-cmd HSET (key field value) :integer
-  "Set the hash FIELD to the specified VALUE. Creates the hash if needed.")
-
-(def-cmd HGET (key field) :bulk
-  "Retrieve the value of the specified hash FIELD.")
-
-(def-cmd HMSET (key &rest fields-and-values) :status
-  "Set the hash FIELDS to their respective VALUES.")
-
-(def-cmd HMGET (key &rest fields) :multi
-  "Get the hash values associated with the specified fields.")
-
-(def-cmd HINCRBY (key field integer) :integer
-  "Increment the integer value of the hash at KEY on FIELD with INTEGER.")
-
-(def-cmd HEXISTS (key field) :boolean
-  "Test for existence of a specified FIELD in a hash.")
-
-(def-cmd HDEL (key field) :boolean
-  "Remove the specified FIELD from a hash.")
-
-(def-cmd HLEN (key) :integer
-  "Return the number of items in a hash.")
-
-(def-cmd HKEYS (key) :multi
-  "Return all the fields in a hash.")
-
-(def-cmd HVALS (key) :multi
-  "Return all the values in a hash.")
-
-(def-cmd HGETALL (key) :multi
-  "Return all the fields and associated values in a hash.")
-
-
-;; Sorting
-
-(def-cmd SORT (key &rest args
-                   &key  by     ; A pattern.
-                         start  
-                         end
-                         get    ; A pattern or a list of patterns.
-                         desc   ; Should sort be descending?
-                         alpha  ; Should sort be lexicographical?
-                         ) :multi
-  "Sort a Set or a List accordingly to the specified parameters.")
-
-
-;; Transactions
+;; Transaction commands
 
 (def-cmd MULTI () :status
   "Redis atomic transactions' start.")
@@ -321,6 +447,13 @@ weight and aggregate.")
 
 (def-cmd DISCARD () :status
   "Redis atomic transactions' rollback.")
+
+(def-cmd WATCH (key &rest keys) :status
+  "Marks the given keys to be watched for conditional execution of a transaction.")
+
+(def-cmd UNWATCH () :status
+  "Flushes all the previously watched keys for a transaction.
+If you call EXEC or DISCARD, there's no need to manually call UNWATCH.")
 
 
 ;; Publish/Subscribe
@@ -341,7 +474,7 @@ weight and aggregate.")
   "Redis Public/Subscribe messaging paradigm implementation.")
 
 
-;; Persistence control commands
+;; Server control commands
 
 (def-cmd SAVE () :status
   "Synchronously save the DB on disk.")
@@ -359,22 +492,39 @@ dataset on disk.")
 (def-cmd BGREWRITEAOF () :status
   "Rewrite the append only file in background when it gets too big.")
 
-
-;; Remote server control commands
-
 (def-cmd INFO () :bulk
   "Provide information and statistics about the server.")
 
-(def-cmd MONITOR () :status
-  "Dump all the received requests in real time.")
-
-(def-cmd SLAVEOF (master) :status
+(def-cmd SLAVEOF (hostname port) :status
   "Change the replication settings.")
 
-(def-cmd CONFIG-GET (pattern) :bulk
+(def-cmd CONFIG-GET (pattern) :multi
   "Configure a Redis server at runtime: get glob PATTERN value.")
 
 (def-cmd CONFIG-SET (parameter value) :status
   "Configure a Redis server at runtime: set PARAMETER VALUE.")
+
+(def-cmd CONFIG-RESETSTAT () :status
+  "Resets the statistics reported by Redis using the INFO command.
+These are the counters that are reset:
+Keyspace hits
+Keyspace misses
+Number of commands processed
+Number of connections received
+Number of expired keys")
+
+(def-cmd FLUSHDB () :status
+  "Remove all the keys of the currently selected DB.")
+
+(def-cmd FLUSHALL () :status
+  "Remove all the keys from all the databases.")
+
+(def-cmd DBSIZE () :integer
+  "Return the number of keys in the current db.")
+
+(def-cmd SYNC () :multi
+  "Synchronize with slave.")
+
+;; not supported commands: MONITOR, SLOWLOG, DEBUG OBJECT, DEBUG SEGFAULT - use redis-cli for that
 
 ;;; end

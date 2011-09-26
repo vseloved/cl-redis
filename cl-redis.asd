@@ -4,7 +4,7 @@
 (in-package :asdf)
 
 (defsystem #:cl-redis
-  :version "2.0.3"
+  :version "2.1.0"
   :maintainer "Vsevolod Dyomkin <vseloved@gmail.com>"
   :licence "MIT"
   :description "Redis database client, using iolib interface."
@@ -24,18 +24,19 @@
 
 #+nuts
 (defsystem #:cl-redis-test
-  :version "1.7.1"
+  :version "2.0.0"
   :maintainer "Vsevolod Dyomkin <vseloved@gmail.com>"
   :licence "MIT"
   :description "CL-Redis test suite"
-  :depends-on (#:cl-redis #:nuts #:bordeaux-threads #:flexi-streams)
+  :depends-on (#:cl-redis #:bordeaux-threads #:flexi-streams
+               (:version #:nuts "0.4.0"))
   :components ((:file "test")))
 
 #+nuts
 (defmethod perform ((o test-op)
                     (c (eql (find-system 'cl-redis-test))))
   (operate 'load-op '#:cl-redis-test)
-  (funcall (intern (symbol-name 'run-tests)
+  (funcall (intern (symbol-name 'run-all-tests)
                    '#:redis-test)))
 
 ;;; end

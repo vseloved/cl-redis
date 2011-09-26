@@ -98,3 +98,9 @@ h2. Debugging, testing and error recovery
 p<>. If @*echo-p*@ is set to @T@, all server-client communications will be echoed to the stream @*echo-stream*@, which defaults to @*standard-output*@. The default value of @*echo-p*@ is @NIL@, meaning no echoing.
 
 p<>. Error handling is mimicked after the "Postmodern":http://common-lisp.net/project/postmodern/ library. In particular, whenever an error occurs that breaks the communication stream, a condition of type @redis-connection-error@ is signaled offering a @:reconnect@ restart. Furthermore, @connect@ checks if a connection to Redis is already established, and offers two restarts (@:leave@ and @:replace@) if this is the case. When the server responses with an error reply (i.e., a reply that starts with @-@), a condition of type @redis-error-reply@ is signaled.
+
+h2. Not implemented
+
+p<>. The following commands are not implemented, because they are for debugging-purposes only: @MONITOR@, @SLOWLOG@, @DEBUG OBJECT@, and @DEBUG SEGFAULT@
+
+p<>. "Consistent hashing":http://en.wikipedia.org/wiki/Consistent_hashing isn't built-in. Actually, such thing is orthogonal to the functionality of this library and, probably, should be implemented in a separate library.

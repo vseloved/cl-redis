@@ -4,6 +4,10 @@
 (in-package :redis)
 
 
+(defvar *pipelined* nil)
+(defvar *pipeline* nil)
+
+
 ;; utils
 
 (defun byte-length (string)
@@ -69,33 +73,48 @@ CMD is the command name (a string or a symbol), and ARGS are its arguments
   (force-output (connection-socket *connection*)))
 
 (defmethod tell (cmd &rest args)
-  (format-redis-line "*~A" (1+ (length args)))
-  (mapcar (lambda (arg)
-            (let ((arg (princ-to-string arg)))
-              (format-redis-line "$~A" (byte-length arg))
-              (format-redis-line "~A"  arg)))
-          (cons cmd args)))
+  (let ((all-args (append (ppcre:split "-" (princ-to-string cmd))
+                          args)))
+    (format-redis-line "*~A" (length all-args))
+    (mapcar (lambda (arg)
+              (let ((arg (princ-to-string arg)))
+                (format-redis-line "$~A" (byte-length arg))
+                (format-redis-line "~A"  arg)))
+            all-args)))
 
 (defmethod tell ((cmd (eql 'SORT)) &rest args)
   (flet ((send-request (key &key by get desc alpha start end)
            (assert (or (and start end)
                        (and (null start) (null end))))
            (apply #'tell "SORT"
-                  (nconc (list key)
-                         (when by (list "BY" by))
-                         (when get (list "GET" get))
-                         (when desc (list "DESC"))
-                         (when alpha (list "ALPHA"))
-                         (when start (list "LIMIT" start end))))))
+                  (append (list key)
+                          (when by    `("BY" ,by))
+                          (when get   `("GET" ,get))
+                          (when desc  '("DESC"))
+                          (when alpha '("ALPHA"))
+                          (when start `("LIMIT" ,start ,end))))))
     (apply #'send-request args)))
 
 (flet ((send-request (cmd key start end &key withscores)
          (apply #'tell (princ-to-string cmd)
-                (nconc (list key start end)
-                       (when withscores (list "WITHSCORES"))))))
+                (append (list key start end)
+                        (when withscores '("WITHSCORES"))))))
   (defmethod tell ((cmd (eql 'ZRANGE)) &rest args)
     (apply #'send-request cmd args))
   (defmethod tell ((cmd (eql 'ZREVRANGE)) &rest args)
+    (apply #'send-request cmd args)))
+
+(flet ((send-request (cmd key start end &key withscores limit)
+         (apply #'tell (princ-to-string cmd)
+                (append (list key start end)
+                        (when withscores '("WITHSCORES"))
+                        (when limit
+                          (assert (and (consp limit)
+                                       (atom (cdr limit))))
+                          (list "LIMIT" (car limit) (cdr limit)))))))
+  (defmethod tell ((cmd (eql 'ZRANGEBYSCORE)) &rest args)
+    (apply #'send-request cmd args))
+  (defmethod tell ((cmd (eql 'ZREVRANGEBYSCORE)) &rest args)
     (apply #'send-request cmd args)))
 
 (flet ((send-request (cmd dstkey n keys &key weights aggregate)
@@ -107,18 +126,22 @@ CMD is the command name (a string or a symbol), and ARGS are its arguments
          (when aggregate
            (assert (member aggregate '(:sum :min :max))))
          (apply #'tell (princ-to-string cmd)
-                (nconc (list dstkey n)
-                       keys
-                       (when weights (cons "WEIGHTS" weights))
-                       (when aggregate (list "AGGREGATE" aggregate))))))
+                (append (list dstkey n)
+                        keys
+                        (when weights (cons "WEIGHTS" weights))
+                        (when aggregate (list "AGGREGATE" aggregate))))))
   (defmethod tell ((cmd (eql 'ZUNIONSTORE)) &rest args)
     (apply #'send-request cmd args))
   (defmethod tell ((cmd (eql 'ZINTERSTORE)) &rest args)
     (apply #'send-request cmd args)))
 
-(defmethod tell :around ((cmd (eql 'SELECT)) &rest args)
-  (if *pipelined* (error "Can't use SELECT inside WITH-PIPELINING.")
-      (call-next-method)))
+(defmethod tell :before ((cmd (eql 'SELECT)) &rest args)
+  (when *pipelined*
+    (error "Can't use SELECT inside WITH-PIPELINING.")))
+
+(defmethod tell :before ((cmd (eql 'LINSERT)) &rest args)
+  (assert (member (second args) '(:before :after))))
+
 
 ;; receiving replies
 
@@ -273,9 +296,6 @@ format."
 
 
 ;; pipelining
-
-(defvar *pipelined* nil)
-(defvar *pipeline* nil)
 
 (defmacro with-pipelining (&body body)
   "Delay execution of EXPECT's inside BODY to the end, so that all
