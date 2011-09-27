@@ -87,10 +87,9 @@ p<>. There are 2 generic functions: @tell@ and @expect@, which implement differe
   (assert (string= reply "OK"))
   reply)</code></pre>
 
-p<>. Redis operations are defined as functions with @def-cmd@ for which only types of interactions and arguments should be provided. @def-cmd@ prefixes all the defined functions' names with @*cmd-prefix*@, which defaults to @'red@. (Note, that  setting of @*cmd-prefix*@ will have its effects at compile time). An example of command definition is given below:
-<pre><code>(def-cmd KEYS (pattern)
-  "Return all the keys matching the given pattern."
-  :inline :list)</code></pre>
+p<>. Redis operations are defined as functions with @def-cmd@ for which only arguments and return type should be provided. @def-cmd@ prefixes all the defined functions' names with @*cmd-prefix*@, which defaults to @'red@. (Note, that  setting of @*cmd-prefix*@ will have its effects at compile time). An example of command definition is given below:
+<pre><code>(def-cmd KEYS (pattern) :multi
+  "Return all the keys matching the given pattern.")</code></pre>
 (see commands.lisp for all defined commands)
 
 h2. Debugging, testing and error recovery
