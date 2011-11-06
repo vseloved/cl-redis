@@ -4,10 +4,10 @@
 (in-package :cl-user)
 
 (defpackage :redis
-  (:use :common-lisp :rutils.usr)
+  (:use :common-lisp #:rutil)
   (:export #:redis-connection
            #:connection-external-format
-           
+
            #:connect
            #:disconnect
            #:reconnect
@@ -33,5 +33,5 @@
            #:redis-error-reply
            #:redis-connection-error
 
-           #:with-pipelining)) 
+           #:with-pipelining))
 ;;; end
