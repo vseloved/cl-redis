@@ -2,10 +2,10 @@ CL-REDIS — a fast and robust Common Lisp client for Redis database (tested wit
 
 h2. Dependencies
 
-* "iolib":http://common-lisp.net/project/iolib/
-* "babel":http://common-lisp.net/project/babel/
+* "usocket":http://common-lisp.net/project/usocket/
+* "flexi-streams":http://common-lisp.net/project/flexi-streams/
 * "rutils":http://github.com/vseloved/rutils
-* only for tests: "nuts":http://github.com/vseloved/nuts, "flexi-streams":http://weitz.de/flexi-streams, "bordeaux-threads":http://common-lisp.net/project/bordeaux-threads
+* only for tests: "nuts":http://github.com/vseloved/nuts, "bordeaux-threads":http://common-lisp.net/project/bordeaux-threads
 
 h2. Usage
 
