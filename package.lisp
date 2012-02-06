@@ -6,7 +6,6 @@
 (defpackage :redis
   (:use :common-lisp #:rutil)
   (:export #:redis-connection
-           #:connection-external-format
 
            #:connect
            #:disconnect

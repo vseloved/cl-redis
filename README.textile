@@ -16,6 +16,23 @@ h2. Usage
 # <p align="justify">Disconnect from the server with @(redis:disconnect)@.</p>
 # <p align="justify">Alternatively, wrap the whole server-client interaction session into a @with-connection@ macro, which accepts the same arguments @connect@ does, opens a socket connection, executes the body of the macro with the current connection bound to this new connection, and ensures that the connection is closed afterwards.</p>
 
+h2. PubSub example
+
+Since there's no special command to receive messages from Redis via PubSub here's how you do it:
+
+<pre><code>(bt:make-thread (lambda ()
+             (with-connection ()
+               (red-subscribe "foo")
+               (loop :for msg := (expect :anything) :do
+                  (print msg))))
+             "pubsub-listener")
+
+;; to publish, obviously:
+(with-connection ()
+   (red-publish "foo" "test"))
+</pre></code>
+
+
 h2. Pipelining
 
 For a better performance Redis allows to pipeline commands and delay receiving results until the end and do that in batch afterwards.  To support that there's @with-pipelining@ macro.  Compare execution times in the following examples (with pipelining and without: 6.567 secs vs. 2023.924 secs!):

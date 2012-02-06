@@ -4,13 +4,14 @@
 (in-package :asdf)
 
 (defsystem #:cl-redis
-  :version "2.1.1"
+  :version "2.2.0"
   :maintainer "Vsevolod Dyomkin <vseloved@gmail.com>"
   :licence "MIT"
   :description "Redis database client, using iolib interface."
-  :depends-on (#:rutils #:cl-ppcre #:babel #:iolib)
+  :depends-on (#:rutils #:cl-ppcre #:usocket #:flexi-streams)
   :serial t
   :components ((:file "package")
+               (:file "float")
                (:file "connection")
                (:file "redis")
                (:file "commands")))
@@ -37,6 +38,6 @@
                     (c (eql (find-system 'cl-redis-test))))
   (operate 'load-op '#:cl-redis-test)
   (funcall (intern (symbol-name 'run-all-tests)
-                   '#:redis-test)))
+                   '#:cl-redis-test)))
 
 ;;; end

@@ -3,6 +3,7 @@
 
 (in-package :redis)
 
+(defparameter +utf8+ '(:utf-8 :eol-style :crlf))
 
 (defvar *pipelined* nil)
 (defvar *pipeline* nil)
@@ -10,21 +11,16 @@
 
 ;; utils
 
-(defun byte-length (string)
-  "Return the length of STRING if encoded using utf-8 external format."
-  (length (babel:string-to-octets string)))
-
 (defun format-redis-line (fmt &rest args)
-  "Write a CRLF-terminated string formatted according to the given control ~
+  "Write a CRLF-terminated string formatted according to the given control
 string FMT and its arguments ARGS to the stream of the current connection.
 If *ECHOP-P* is not NIL, write that string to *ECHO-STREAM*, too."
-  (let ((string (apply #'format nil fmt args))
-        (redis-out (connection-socket *connection*)))
-    (when *echo-p* (format *echo-stream* " > ~A~%" string))
-    (write-sequence (babel:string-to-octets string
-                                            :encoding :utf-8)
-                    redis-out)
-    (terpri redis-out)))
+  (let ((str (apply #'fmt fmt args))
+        (out (conn-stream *connection*)))
+    (when *echo-p* (format *echo-stream* " > ~A~%" str))
+    (write-sequence (flex:string-to-octets str :external-format +utf8+)
+                    out)
+    (terpri out)))
 
 
 ;; conditions
@@ -53,8 +49,7 @@ restart."))
 
 (define-condition redis-error-reply (redis-error)
   ()
-  (:documentation "Raised when an error reply is received from Redis ~
-server."))
+  (:documentation "Raised when an error reply is received from Redis server."))
 
 (define-condition redis-bad-reply (redis-error)
   ()
@@ -70,7 +65,7 @@ CMD is the command name (a string or a symbol), and ARGS are its arguments
 
 (defmethod tell :after (cmd &rest args)
   (declare (ignore cmd args))
-  (force-output (connection-socket *connection*)))
+  (force-output (conn-stream *connection*)))
 
 (defmethod tell (cmd &rest args)
   (let ((all-args (append (ppcre:split "-" (princ-to-string cmd))
@@ -78,7 +73,7 @@ CMD is the command name (a string or a symbol), and ARGS are its arguments
     (format-redis-line "*~A" (length all-args))
     (mapcar (lambda (arg)
               (let ((arg (princ-to-string arg)))
-                (format-redis-line "$~A" (byte-length arg))
+                (format-redis-line "$~A" (flex:octet-length arg :external-format +utf8+))
                 (format-redis-line "~A"  arg)))
             all-args)))
 
@@ -146,8 +141,7 @@ CMD is the command name (a string or a symbol), and ARGS are its arguments
 ;; receiving replies
 
 (defgeneric expect (type)
-  (:documentation "Receive and process the reply of the given type
-from Redis server."))
+  (:documentation "Receive and process the reply of the given type from Redis server."))
 
 (defmethod expect :around (type)
   (if *pipelined*
@@ -157,13 +151,13 @@ from Redis server."))
 
 (eval-always
   (defmacro with-redis-in ((line char) &body body)
-    `(if-it (peek-char nil (connection-socket *connection*) nil nil)
-            (let ((,line (read-line (connection-socket *connection*)))
+    `(if-it (peek-char nil (conn-stream *connection*) nil nil)
+            (let ((,line (read-line (conn-stream *connection*)))
                   (,char it))
               (when *echo-p* (format *echo-stream* "<  ~A~%" ,line))
               ,@body)
             (error 'redis-bad-reply
-                   :message (format nil "Recieved empty string from server."))))
+                   :message (fmt "Recieved empty string from server."))))
 
   (defmacro def-expect-method (type &body body)
     "Define a specialized EXPECT method.  BODY may refer to the ~
@@ -171,8 +165,7 @@ variable REPLY, which is bound to the reply received from Redis ~
 server with the first character removed."
     (with-unique-names (line char)
       `(defmethod expect ((type (eql ,type)))
-         ,(format nil "Receive and process the reply of type ~A."
-                  type)
+         ,(fmt "Receive and process the reply of type ~A." type)
          (with-redis-in (,line ,char)
            (let ((reply (subseq ,line 1)))
              (if (string= ,line "+QUEUED") "QUEUED"
@@ -180,13 +173,12 @@ server with the first character removed."
                    (#\- (error 'redis-error-reply :message reply))
                    ((#\+ #\: #\$ #\*) ,@body)
                    (otherwise (error 'redis-bad-reply
-                                     :message (format nil "Received ~C as the ~
-initial reply byte."
-                                                      ,char)))))))))))
+                                     :message (fmt "Received ~C as the initial reply byte."
+                                                   ,char)))))))))))
 
 (defmethod expect ((type (eql :anything)))
   "Receive and process status reply, which is just a string, preceeded with +."
-  (case (peek-char nil (connection-socket *connection*))
+  (case (peek-char nil (conn-stream *connection*))
     (#\+ (expect :status))
     (#\: (expect :inline))
     (#\$ (expect :bulk))
@@ -200,9 +192,8 @@ initial reply byte."
       (#\- (error 'redis-error-reply :message (subseq line 1)))
       (#\+ (subseq line 1))
       (otherwise (error 'redis-bad-reply
-                        :message (format nil
-                                         "Received ~C as the initial reply byte."
-                                         char))))))
+                        :message (fmt "Received ~C as the initial reply byte."
+                                      char))))))
 
 (def-expect-method :inline
   reply)
@@ -218,13 +209,12 @@ initial reply byte."
 (macrolet ((read-bulk-reply (&optional reply-transform)
              `(let ((n (parse-integer reply)))
                 (unless (<= n 0)
-                  (let ((octets (make-array n :element-type '(unsigned-byte 8)))
-                        (socket (connection-socket *connection*)))
-                    (read-sequence octets socket)
-                    (read-byte socket)  ; #\Return
-                    (read-byte socket)  ; #\Linefeed
-                    (let ((string (babel:octets-to-string octets
-                                                          :encoding :utf-8)))
+                  (let ((bytes (make-array n :element-type 'flex:octet))
+                        (in (conn-stream *connection*)))
+                    (read-sequence bytes in)
+                    (read-byte in)           ; #\Return
+                    (read-byte in)           ; #\Linefeed
+                    (let ((string (flex:octets-to-string bytes :external-format +utf8+)))
                       (when *echo-p* (format *echo-stream* "<  ~A~%" string))
                       (if (string= string "nil") nil
                           (if ,reply-transform (funcall ,reply-transform string)
@@ -247,16 +237,13 @@ initial reply byte."
          :collect (expect :anything)))))
 
 (defmethod expect ((type (eql :pubsub)))
-  (let ((in (connection-socket *connection*)))
+  (let ((in (conn-stream *connection*)))
     (loop :collect (with-redis-in (line char)
                      (list (expect :bulk)
                            (expect :bulk)
                            (expect :inline)))
        :do (let ((next-char (read-char-no-hang in)))
-             (if next-char (progn (unread-char next-char in)
-                                  ;; after unread-char #\Newline is
-                                  ;; received from iolib socket!
-                                  (read-char in))
+             (if next-char (unread-char next-char in)
                  (loop-finish))))))
 
 (defmethod expect ((type (eql :end)))
@@ -278,7 +265,7 @@ initial reply byte."
   "Define and export a function with the name <*CMD-REDIX*>-<CMD> for
 processing a Redis command CMD.  Here REPLY-TYPE is the expected reply
 format."
-  (let ((cmd-name (intern (format nil "~:@(~A-~A~)" *cmd-prefix* cmd))))
+  (let ((cmd-name (intern (fmt "~:@(~A-~A~)" *cmd-prefix* cmd))))
     `(progn
        (defun ,cmd-name ,args
          ,docstring
@@ -291,7 +278,7 @@ format."
                      `(tell ',cmd ,@args))
              (prog1 (expect ,reply-type)
                (unless *pipelined*
-                 (clear-input (connection-socket *connection*)))))))
+                 (clear-input (conn-stream *connection*)))))))
        (export ',cmd-name :redis))))
 
 

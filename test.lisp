@@ -3,12 +3,13 @@
 
 (in-package :cl-user)
 
-(defpackage #:redis-test
-  (:use :common-lisp :rutils.user :rutils.short #+nuts :nuts
-        :redis)
+(defpackage #:cl-redis-test
+  (:use :common-lisp :rutil :redis
+        #+nuts :nuts)
   (:export #:run-tests))
 
-(in-package #:redis-test)
+(in-package #:cl-redis-test)
+(named-readtables:in-readtable rutils-readtable)
 
 ;; utils
 
@@ -42,34 +43,25 @@
  > HGET
  > $2
  > h1
- > $4
+ > $5
  > f1
 ~
 "))))
 
 (flet ((expect-from-str (expected input)
-         (sockets:with-open-socket (server :connect :passive
-                                           :address-family :internet
-                                           :type :stream
-                                           :ipv6 nil
-                                           :external-format '(:utf-8
-                                                              :eol-style :crlf))
-           (sockets:bind-address server sockets:+ipv4-unspecified+ :port 63799
-                                 :reuse-addr t)
-           (sockets:listen-on server)
-           (with-connection (:port 63799)
-             (let* ((client (sockets:accept-connection server :wait t))
-                    (bt:*default-special-bindings*
-                     (append `((*connection* . ,*connection*)
-                               (*trace-output* . ,*trace-output*))
-                             bt:*default-special-bindings*))
-                    (worker (bt:make-thread (lambda ()
-                                              (expect expected)))))
-               (mapcar (lambda (x)
-                         (write-line x client))
-                       (mklist input))
-               (finish-output client)
-               (bt:join-thread worker))))))
+         (let ((server (usocket:socket-listen usocket:*wildcard-host* 63799
+                                              :reuseaddress t)))
+           (unwind-protect (let* ((bt:*default-special-bindings* (append `((*connection* . ,*connection*)
+                                                                           (*trace-output* . ,*trace-output*))
+                                                                         bt:*default-special-bindings*))
+                                  (worker (bt:make-thread #`(with-connection (:port 63799)
+                                                              (expect expected))))
+                                  (client (usocket:socket-stream (usocket:socket-accept server))))
+                             (mapcar #`(format client "~A~C~C" % #\Return #\Linefeed)
+                                     (mklist input))
+                             (finish-output client)
+                             (bt:join-thread worker))
+             (usocket:socket-close server)))))
   (deftest expect ()
     (check true                  (expect-from-str :status "+OK"))
     (check string= "10$"         (expect-from-str :inline "+10$"))
@@ -95,7 +87,7 @@
 (deftest connection ()
   (with-connection ()
     (check string= "Hello World!" (red-echo "Hello World!"))
-    (check string= "OK"           (red-auth "pass"))
+    (check-errs (red-auth "pass"))
     ;; QUIT - futile
 ))
 
