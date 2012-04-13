@@ -154,6 +154,7 @@ CMD is the command name (a string or a symbol), and ARGS are its arguments
     `(if-it (peek-char nil (conn-stream *connection*) nil nil)
             (let ((,line (read-line (conn-stream *connection*)))
                   (,char it))
+              (pprint ,char)
               (when *echo-p* (format *echo-stream* "<  ~A~%" ,line))
               ,@body)
             (error 'redis-bad-reply
@@ -208,7 +209,7 @@ server with the first character removed."
 
 (macrolet ((read-bulk-reply (&optional reply-transform)
              `(let ((n (parse-integer reply)))
-                (unless (<= n 0)
+                (unless (< n 0)
                   (let ((bytes (make-array n :element-type 'flex:octet))
                         (in (conn-stream *connection*)))
                     (read-sequence bytes in)
