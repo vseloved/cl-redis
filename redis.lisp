@@ -208,7 +208,7 @@ server with the first character removed."
 
 (macrolet ((read-bulk-reply (&optional reply-transform)
              `(let ((n (parse-integer reply)))
-                (unless (<= n 0)
+                (unless (< n 0)
                   (let ((bytes (make-array n :element-type 'flex:octet))
                         (in (conn-stream *connection*)))
                     (read-sequence bytes in)
