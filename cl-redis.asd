@@ -17,23 +17,19 @@
                (:file "commands")))
 
 
-#+nuts
 (defmethod perform ((o test-op)
                     (c (eql (find-system 'cl-redis))))
   (operate 'load-op '#:cl-redis)
   (operate 'test-op '#:cl-redis-test))
 
-#+nuts
 (defsystem #:cl-redis-test
   :version "2.0.0"
   :maintainer "Vsevolod Dyomkin <vseloved@gmail.com>"
   :licence "MIT"
   :description "CL-Redis test suite"
-  :depends-on (#:cl-redis #:bordeaux-threads #:flexi-streams
-               (:version #:nuts "0.4.0"))
+  :depends-on (#:cl-redis #:bordeaux-threads #:flexi-streams #:nuts)
   :components ((:file "test")))
 
-#+nuts
 (defmethod perform ((o test-op)
                     (c (eql (find-system 'cl-redis-test))))
   (operate 'load-op '#:cl-redis-test)
