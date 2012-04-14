@@ -69,6 +69,7 @@
     (check = 10                  (expect-from-str :integer "+10"))
     (check = 10.0                (expect-from-str :float '("+4" "10.0")))
     (check string= "abc"         (expect-from-str :bulk '("+3" "abc")))
+    (check string= ""            (expect-from-str :bulk '("+0" "")))
     (check equal '("a" nil)      (expect-from-str :multi '("*2" "$1" "a" "$-1")))
     ;; undocumented case for $0, let's be on the safe side
     (check equal '("a" nil)      (expect-from-str :anything
