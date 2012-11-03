@@ -4,24 +4,25 @@
 ## Quickstart
 
 1. Make sure a Redis server is running.
-2. `(require 'cl-redis)`
+2. `(ql:quickload 'cl-redis)`
 3. Connect to the server to the given host and port with
    `(redis:connect :host <host> :port <port>)`
-   (`host` defaults to `127.0.0.1` and `port` - to `6739`).
+   (`host` defaults to `127.0.0.1`, `port` — to `6739`).
 4. Interact with the server using Redis commands from the `red` package.
 
-       CL-USER> (red:ping)
-       "PONG"
+        CL-USER> (red:ping)
+        "PONG"
 
 5. Disconnect from the server with `(redis:disconnect)`.
 6. Alternatively, wrap the whole interaction session in `with-connection` macro,
    which accepts the same arguments as `connect` does, opens a socket connection,
-   executes the body of the macro with the current connection bound to
-   this new connection, and ensures that the connection is closed afterwards.
+   executes the body of the macro with the current connection (`*connection*`)
+   bound to this new connection, and ensures that the connection is closed
+   afterwards.
 
 The system provides 2 packages: `REDIS` and `RED`.  All the functionality is
 available from the `REDIS` package.  Not to cause symbol clashes,
-Redis commands are defined in this packae with a prefix (which default to `red-`
+Redis commands are defined in this package with a prefix (which default to `red-`
 and is set at compilation time).  The `RED` package is a syntactic sugar —
 it just provides the Redis commands without a prefix.  So it is not intended
 to be imported to avoid symbol conflicts with package `COMMON-LISP`.
@@ -41,7 +42,7 @@ So, the same Redis command (for instance `GET`) can be called as
 
 ## Debugging, testing and error recovery
 
-If `*echo-p*` is `T`, all server-client communications will be
+If `*echo-p*` is `T`, all client-server communications will be
 echoed to the stream `*echo-stream*`, which defaults to `*standard-output*`.
 
 Error handling is mimicked after
@@ -49,7 +50,7 @@ Error handling is mimicked after
 In particular, whenever an error occurs that breaks the communication stream,
 a condition of type `redis-connection-error` is signalled offering
 a `:reconnect` restart.  If it is selected the whole Redis command will be
-resend, if the reconnection attempt succeeds.
+resent, if the reconnection attempt succeeds.
 Furthermore, `connect` checks if a connection to Redis is already established,
 and offers two restarts (`:leave` and `:replace`) if this is the case.
 
@@ -58,7 +59,8 @@ When the server respondes with an error reply
 a condition of type `redis-error-reply` is signalled.
 
 There's also a high-level `with-persistent-connection` macro,
-that tries to automatically reopen the connection once, if it is broken.
+that tries to do the right thing™
+(i.e. automatically reopen the connection once, if it is broken).
 
 
 ## PubSub example
@@ -82,7 +84,8 @@ To publish, obviously:
 ## Pipelining example
 
 For better performance Redis allows to pipeline commands
-and delay receiving results until the end and do that in batch afterwards.
+and delay receiving results until the end,
+and process them all in oine batch afterwards.
 To support that there's `with-pipelining` macro.
 Compare execution times in the following examples
 (with pipelining and without: 6.567 secs vs. 2023.924 secs!):
@@ -126,7 +129,7 @@ Note, that `with-pipelining` calls may nest.
 
 Generic functions `tell` and `expect` implement the Redis protocol
 according to the [spec](http://redis.io/topics/protocol).
-`tell` specifies how a request to Redis is formatted.
+`tell` specifies how a request to Redis is formatted,
 `expect` — how the response is handled.
 The best way to implement another method on `expect` is usually with
 `def-expect-method`, which arranges reading data from the socket
@@ -142,6 +145,9 @@ for which only arguments and return type should be provided.
 `def-cmd` prefixes all the defined functions' names with `*cmd-prefix*`,
 which defaults to `'red`.
 (Note, that setting of `*cmd-prefix*` will have its effects at compile time).
+It also exports them from `REDIS` package,
+and from `RED` package without the prefix.
+
 An example of command definition is given below:
 
     (def-cmd KEYS (pattern) :multi
@@ -159,6 +165,7 @@ See `commands.lisp` for all defined commands.
   isn't built-in.  Actually, such thing is orthogonal to the functionality
   of this library and, probably, should be implemented in a separate library.
 - Connection pooling is also not implemented, because in the presence of
-  `with-persistent-connection` it is not so much needed.
-  But there are use-cases for it, so it will probably be implemented in future
-  releases.
+  `with-persistent-connection` it is actually not needed so much.
+  Persistent connections are more simple, efficient and less error-prone
+  for dedicated threads.  But there are other use-cases for pooling,
+  so it will probably be implemented in future releases.
