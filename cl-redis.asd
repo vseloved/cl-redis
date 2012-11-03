@@ -4,7 +4,7 @@
 (in-package :asdf)
 
 (defsystem #:cl-redis
-  :version "2.2.1"
+  :version "2.3.0"
   :maintainer "Vsevolod Dyomkin <vseloved@gmail.com>"
   :licence "MIT"
   :description "Redis database client, using iolib interface."
@@ -23,7 +23,7 @@
   (operate 'test-op '#:cl-redis-test))
 
 (defsystem #:cl-redis-test
-  :version "2.0.0"
+  :version "2.3.0"
   :maintainer "Vsevolod Dyomkin <vseloved@gmail.com>"
   :licence "MIT"
   :description "CL-Redis test suite"

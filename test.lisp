@@ -51,28 +51,43 @@
 (flet ((expect-from-str (expected input)
          (let ((server (usocket:socket-listen usocket:*wildcard-host* 63799
                                               :reuseaddress t)))
-           (unwind-protect (let* ((bt:*default-special-bindings* (append `((*connection* . ,*connection*)
-                                                                           (*trace-output* . ,*trace-output*))
-                                                                         bt:*default-special-bindings*))
-                                  (worker (bt:make-thread #`(with-connection (:port 63799)
-                                                              (expect expected))))
-                                  (client (usocket:socket-stream (usocket:socket-accept server))))
-                             (mapcar #`(format client "~A~C~C" % #\Return #\Linefeed)
-                                     (mklist input))
-                             (finish-output client)
-                             (bt:join-thread worker))
+           (unwind-protect
+                (let ((bt:*default-special-bindings*
+                       (append `((*connection* . ,*connection*)
+                                 (*trace-output* . ,*trace-output*))
+                               bt:*default-special-bindings*)))
+                  (bt:make-thread
+                   (lambda ()
+                     (let ((client
+                            (flex:make-flexi-stream
+                             (usocket:socket-stream (usocket:socket-accept
+                                                     server :element-type
+                                                            'flex:octet))
+                             :external-format redis::+utf8+
+                             :element-type 'flex:octet)))
+                       (mapcar #`((write-sequence (if (stringp %)
+                                                      (flex:string-to-octets
+                                                       % :external-format redis::+utf8+)
+                                                      (map 'vector #'code-char %))
+                                                  client)
+                                  (write-byte (char-code #\Return) client)
+                                  (write-byte (char-code #\Linefeed) client))
+                               (mklist input))
+                       (finish-output client))))
+                  (with-connection (:port 63799)
+                    (expect expected)))
              (usocket:socket-close server)))))
   (deftest expect ()
-    (check true                  (expect-from-str :status "+OK"))
+    (check string= "OK"          (expect-from-str :status "+OK"))
     (check string= "10$"         (expect-from-str :inline "+10$"))
     (check null                  (expect-from-str :boolean "+0$"))
     (check = 10                  (expect-from-str :integer "+10"))
-    (check = 10.0                (expect-from-str :float '("+4" "10.0")))
+    (check = 10.0d0              (expect-from-str :float '("+4" "10.0")))
     (check string= "abc"         (expect-from-str :bulk '("+3" "abc")))
     (check string= ""            (expect-from-str :bulk '("+0" "")))
     (check equal '("a" nil)      (expect-from-str :multi '("*2" "$1" "a" "$-1")))
     ;; undocumented case for $0, let's be on the safe side
-    (check equal '("a" nil)      (expect-from-str :anything
+    (check equal '("a" "")       (expect-from-str :anything
                                                 '("*2" "$1" "a" "$0" "")))
     (check equal '("a" "b" "c")  (expect-from-str :list '("+5" "a b c")))
     (check equal '("OK" ("a"))   (expect-from-str :queued
@@ -82,7 +97,8 @@
                                                   '("*3" "$9" "subscribe"
                                                     "$5" "chan1" ":1"
                                                     "*3" "$9" "subscribe"
-                                                    "$5" "chan2" ":2")))))
+                                                    "$5" "chan2" ":2")))
+    (check equalp #(1 2 3)       (expect-from-str :bytes '("*3" #(1 2 3))))))
 
 
 (deftest connection ()
@@ -98,11 +114,18 @@
     (check string= "OK"      (red-set "mykey" "Hello"))
     (check true              (red-expire "mykey" 10))
     (check = 10              (red-ttl "mykey"))
+    (check true              (red-pexpire "mykey" 10000))
+    (check < 9990            (red-pttl "mykey"))
     (check true              (red-persist "mykey"))
     (check = -1              (red-ttl "mykey"))
     (check true              (red-exists "mykey"))
     (check true              (red-expireat "mykey" (- (get-universal-time)
                                                       2208988800)))
+    (check null              (red-exists "mykey"))
+    (check string= "OK"      (red-set "mykey" "Hello"))
+    (check true              (red-pexpireat "mykey" (* 1000
+                                                       (- (get-universal-time)
+                                                          2208988800))))
     (check null              (red-exists "mykey"))
     (check = 1               (red-lpush "mylist" "Hello World"))
     (check = 1               (red-object-refcount "mylist"))
@@ -117,8 +140,15 @@
     (check null              (red-move "foo" 14))
     (check true              (red-select 14))
     (check true              (red-del "foo"))
-    (check true              (red-select 15))))
-
+    (check true              (red-select 15))
+    (check string= "OK"      (red-set "mykey" 10))
+    (check equalp #(0 192 10 6 0 248 114 63 197 251 251 95 40)
+                             (red-dump "mykey"))
+    (check true              (red-del "mykey"))
+    (check string= "OK"      (red-restore "mykey" 0 #(0 192 10 6 0 248 114 63 197 251 251 95 40)))
+    (check string= "string"  (red-type "mykey"))
+    (check string= "10"      (red-get "mykey"))
+))
 
 (deftest sort ()
   (with-test-db
@@ -157,7 +187,8 @@
     (check equal '("o1" "o3" "o2") (red-sort "numbers" :by "weight_*"
                                              :get "object_*" :desc t))
     (check equal '("о1" "о3" "о2") (red-sort "числа" :by "вага_*"
-                                             :get "об'єкт_*" :desc t))))
+                                             :get "об'єкт_*" :desc t))
+    ))
 
 
 (deftest str-commands ()
@@ -185,9 +216,8 @@
     (check = 4               (red-incr "ю"))
     (check = 6               (red-incrby "u" 2))
     (check = 6               (red-incrby "ю" 2))
-    (check = 5               (red-decr "u"))
+    (check = 5.0             (red-incrbyfloat "u" -1.0))
     (check = 5               (red-decr "ю"))
-    (check = 3               (red-decrby "u" 2))
     (check = 3               (red-decrby "ю" 2))
     (check true              (red-exists "u"))
     (check true              (red-exists "ю"))
@@ -270,10 +300,13 @@
     (check = 0               (red-setbit "mykey" 7 1))
     (check = 1               (red-getbit "mykey" 7))
     (check = 0               (red-getbit "mykey" 10000))
+    (check = 55              (red-bitcount "mykey"))
+    (check = 16              (red-bitop "NOT" "mykey2" "mykey"))
     (check string= "Uhis is a Redisg"
                              (red-get "mykey"))
     (check = 16              (red-strlen "mykey"))
-    (check = 0               (red-strlen "nonex key"))))
+    (check = 0               (red-strlen "nonex key"))
+    ))
 
 
 (deftest l-commands ()
@@ -372,7 +405,8 @@
     (check equal '("Hello" "There" "World" "!")
                              (red-lrange "mylist2" 0 -1))
     (check-errs              (red-linsert "mylist2" :inside "World" "1"))
-    (check = -1              (red-linsert "mylist2" :before "W" "1"))))
+    (check = -1              (red-linsert "mylist2" :before "W" "1"))
+    ))
 
 
 (deftest s-commands ()
@@ -384,6 +418,7 @@
     (check true              (red-sadd "s" "2"))
     (check true              (red-sadd "э" "2"))
     (check find-s '("2" "1") (red-srandmember "s"))
+    (check equal '("1" "2")  (red-srandmember "s" 2))
     (check find-s '("2" "1") (red-spop "s"))
     (check find-s '("2" "1") (red-spop "э"))
     (check true              (or (red-sadd "s" "2")
@@ -440,7 +475,8 @@
     (check true              (red-sdiffstore "s5" "s4" "s3"))
     (check true              (red-sdiffstore "э5" "э4" "э3"))
     (check equal '("2")      (red-smembers "s5"))
-    (check equal '("2")      (red-smembers "э5"))))
+    (check equal '("2")      (red-smembers "э5"))
+    ))
 
 
 (deftest z-commands ()
@@ -462,7 +498,7 @@
     (check true                (red-zadd "set" 5 "e5"))
     (check true                (red-zadd "множина" 5 "елемент5"))
     (check = 5                 (red-zcard "set"))
-    (check = 10.0              (red-zscore "set" "e2"))
+    (check = 10.0d0            (red-zscore "set" "e2"))
     (check = 4                 (red-zrank "set" "e2"))
     (check = 0                 (red-zrevrank "set" "e2"))
     (check equal '("e3" "e4" "e5")
@@ -472,7 +508,7 @@
     (check equal '("e4" "e3" "e1")
                                (red-zrevrange "set" 2 4))
     (check equal '("елемент4" "4" "елемент3" "3" "елемент1" "1")
-                               (red-zrevrange "множина" 2 4 :withscores t))
+                               (red-zrevrange "множина" 2 4 :withscores))
 
     (check equal '("e5" "e2")  (red-zrangebyscore "set" 5 10))
     (check equal '("елемент1" "елемент3" "елемент4" "елемент5" "елемент2")
@@ -500,7 +536,8 @@
     (check true                (red-zadd "myzset" 1 "three"))
     (check = 3                 (red-zcount "myzset" "-inf" "+inf"))
     (check = 0                 (red-zcount "myzset" "(1" "3"))
-    (check = 1                 (red-zincrby "myzset" 3 "two"))))
+    (check = 1                 (red-zincrby "myzset" 3 "two"))
+    ))
 
 
 (deftest h-commands ()
@@ -513,6 +550,7 @@
     (check string= "OK"      (red-hmset "h1" "f1" "1" "f2" "2"))
     (check = 3               (red-hincrby "h1" "f2" "1"))
     (check = 0               (red-hincrby "h1" "f1" "-1"))
+    (check = 0.1d0           (red-hincrbyfloat "h1" "f1" "0.1"))
     (check true              (red-hexists "h1" "f1"))
     (check null              (red-hexists "h1" "f3"))
     (check true              (red-hdel "h1" "f1"))
@@ -523,29 +561,31 @@
     (check equal '("f2" "3") (red-hgetall "h1"))
     (check true              (red-hsetnx "myhash" "field" "Hello"))
     (check null              (red-hsetnx "myhash" "field" "World"))
-    (check string= "Hello"   (red-hget "myhash" "field"))))
+    (check string= "Hello"   (red-hget "myhash" "field"))
+    ))
 
 
 (deftest transactions ()
   (with-test-db
-    (check string= "OK"          (red-multi))
-    (check string= "QUEUED"      (red-incr "foo"))
-    (check string= "QUEUED"      (red-incr "bar"))
-    (check string= "QUEUED"      (red-incr "bar"))
-    (check equal '("1" "1" "2")  (red-exec))
+    (check string= "OK"     (red-multi))
+    (check string= "QUEUED" (red-incr "foo"))
+    (check string= "QUEUED" (red-incr "bar"))
+    (check string= "QUEUED" (red-incr "bar"))
+    (check equal '(1 1 2)   (red-exec))
 
-    (check string= "OK"          (red-multi))
-    (check string= "QUEUED"      (red-set "a" "abc"))
-    (check string= "QUEUED"      (red-lpop "a"))
-    (check-errs                  (red-exec))
+    (check string= "OK"     (red-multi))
+    (check string= "QUEUED" (red-set "a" "abc"))
+    (check string= "QUEUED" (red-lpop "a"))
+    (check-errs             (red-exec))
 
-    (check true                  (red-set "foo" "1"))
-    (check string= "OK"          (red-multi))
-    (check string= "QUEUED"      (red-incr "foo"))
-    (check string= "OK"          (red-discard))
-    (check string= "1"           (red-get "foo"))
-    (check string= "OK"          (red-watch "abc"))
-    (check string= "OK"          (red-unwatch))))
+    (check true             (red-set "foo" "1"))
+    (check string= "OK"     (red-multi))
+    (check string= "QUEUED" (red-incr "foo"))
+    (check string= "OK"     (red-discard))
+    (check string= "1"      (red-get "foo"))
+    (check string= "OK"     (red-watch "abc"))
+    (check string= "OK"     (red-unwatch))
+    ))
 
 
 (deftest pubsub ()
@@ -577,7 +617,8 @@
                                         (expect :multi)))
      (check equal '(("punsubscribe" "news.*" "0"))
                                  (red-punsubscribe))
-     (check = 0                  (red-publish "test" "test")))))
+     (check = 0                  (red-publish "test" "test"))
+     )))
 
 
 (deftest pipelining ()
@@ -587,26 +628,57 @@
     (cumulative-and
      (check equal '("PONG" 0) (with-pipelining
                                 (red-ping)
-                                (red-dbsize)))
-     (check-errs (with-pipelining
-                   (red-select 2))))))
+                                (red-dbsize))))))
 
 
 (deftest server ()
   (with-connection ()
     (cumulative-and
-     (check true                    (red-save))
-     (check true                    (red-bgsave))
-     (check integerp                (red-lastsave))
-     (check string= "redis_version" (subseq (red-info) 0 13))
-     (check string= "OK"            (red-slaveof "no" "one"))
-     (check string= "save"          (first (red-config-get "save")))
-     (check string= "OK"            (red-config-set "timeout" 200))
-     (check string= "OK"            (red-config-resetstat))
+     (check true                    (red:save))
+     (check true                    (red:bgsave))
+     (check integerp                (red:lastsave))
+     (check string= "redis_version" (let ((info (red:info)))
+                                      (if (char= #\# (char info 0))
+                                          (subseq info 9 22)
+                                          (subseq info 0 13))))
+     (check string= "OK"            (red:slaveof "no" "one"))
+     (check string= "save"          (first (red:config-get "save")))
+     (check string= "OK"            (red:config-set "timeout" 200))
+     (check string= "OK"            (red:config-resetstat))
+     ;; the next commands have unpredicatble results - just check, that they run
+     (check null                    (red:slowlog :get 10))
+     (check true                    (red:slowlog :len))
+     (check true                    (red:slowlog :reset))
      ;; SYNC, BGREWRITEAOF - may be too long
      ;; SHUTDOWN - futile
      ;; FLUSHALL - don't do this at home
-)))
+     ;; MIGRATE - don't have other host
+     )))
+
+
+(deftest scripting ()
+  (let ((sha1 "080c414e64bca1184bc4f6220a19c4d495ac896d"))
+    (with-test-db
+      (check = 10           (red:eval "return 10" 0))
+      (check equal '(1 2 (3 "Hello World!"))
+                            (red:eval "return {1,2,{3,'Hello World!'}}" 0))
+      (check string= sha1   (red:script-load "return 10"))
+      (check = 10           (red:evalsha sha1 0))
+      (check equal '(1 0)   (red:script-exists
+                             sha1 "ffffffffffffffffffffffffffffffffffffffff"))
+      (check-errs           (red:script-kill))
+      (progn
+        (bt:make-thread #`(with-connection ()
+                            (ignore-errors
+                              (red:evalsha (red:script-load
+                                            "while true do print(1) end")
+                                           0))))
+        (sleep 1)  ; waiting for the previous thread to start
+        (check string= "OK" (red:script-kill)))
+      (check string= "OK"   (red:script-flush))
+      (check equal '(0 0)   (red:script-exists
+                             sha1 "ffffffffffffffffffffffffffffffffffffffff"))
+      )))
 
 
 (defun run-all-tests (&key echo-p)
@@ -624,6 +696,7 @@
                transactions
                pubsub
                pipelining
-               server)))
+               server
+               scripting)))
 
 ;;; end

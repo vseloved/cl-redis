@@ -1,7 +1,7 @@
 ;;; Parsing floats
 ;;; taken from ARNESI
 
-(in-package :redis)
+(in-package #:redis)
 
 
 (defun radix-values (radix)

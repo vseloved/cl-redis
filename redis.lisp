@@ -1,15 +1,16 @@
 ;;; CL-REDIS implementation of the wire protocol
 ;;; (c) Vsevolod Dyomkin, Oleksandr Manzyuk. see LICENSE file for permissions
 
-(in-package :redis)
+(in-package #:redis)
 
-(defparameter +utf8+ '(:utf-8 :eol-style :crlf))
+(eval-always
+  (defparameter +utf8+ '(:utf-8 :eol-style :crlf)))
 
 (defvar *pipelined* nil)
 (defvar *pipeline* nil)
 
 
-;; utils
+;; Utils.
 
 (defun format-redis-line (fmt &rest args)
   "Write a CRLF-terminated string formatted according to the given control
@@ -18,45 +19,42 @@ If *ECHOP-P* is not NIL, write that string to *ECHO-STREAM*, too."
   (let ((str (apply #'fmt fmt args))
         (out (conn-stream *connection*)))
     (when *echo-p* (format *echo-stream* " > ~A~%" str))
-    (write-sequence (flex:string-to-octets str :external-format +utf8+)
-                    out)
+    (write-sequence (flex:string-to-octets str :external-format +utf8+) out)
     (terpri out)))
 
 
-;; conditions
+;;; Conditions.
 
 (define-condition redis-error (error)
-  ((message
-    :initarg  :message
-    :reader   redis-error-message)
-   (comment
+  ((error
+    :initarg :error
+    :reader redis-error-error)
+   (message
     :initform nil
-    :initarg  :comment
-    :reader   redis-error-comment))
+    :initarg :message
+    :reader redis-error-message))
   (:report (lambda (e stream)
              (format stream
                      "Redis error: ~A~:[~;~2&~:*~A~]"
-                     (redis-error-message e)
-                     (redis-error-comment e))))
-  (:documentation "This is the condition type that will be used to ~
-signal virtually all Redis-related errors."))
+                     (redis-error-error e)
+                     (redis-error-message e))))
+  (:documentation "Any Redis-related error."))
 
 (define-condition redis-connection-error (redis-error)
   ()
-  (:documentation "Conditions of this type are signaled when errors ~
-occur that break the connection stream.  They offer a :reconnect ~
-restart."))
+  (:documentation "Conditions of this type are signaled when errors occur
+that break the connection stream.  They offer a :RECONNECT restart."))
 
 (define-condition redis-error-reply (redis-error)
   ()
-  (:documentation "Raised when an error reply is received from Redis server."))
+  (:documentation "Error reply is received from Redis server."))
 
 (define-condition redis-bad-reply (redis-error)
   ()
-  (:documentation "Raised when a Redis protocol error is detected."))
+  (:documentation "Redis protocol error is detected."))
 
 
-;; sending commands to the server
+;;; Sending commands to the server.
 
 (defgeneric tell (cmd &rest args)
   (:documentation "Send a command to Redis server over a socket connection.
@@ -68,77 +66,16 @@ CMD is the command name (a string or a symbol), and ARGS are its arguments
   (force-output (conn-stream *connection*)))
 
 (defmethod tell (cmd &rest args)
-  (let ((all-args (append (ppcre:split "-" (princ-to-string cmd))
-                          args)))
+  (let ((all-args (cl:append (ppcre:split "-" (princ-to-string cmd))
+                             args)))
     (format-redis-line "*~A" (length all-args))
-    (mapcar (lambda (arg)
-              (let ((arg (princ-to-string arg)))
-                (format-redis-line "$~A" (flex:octet-length arg :external-format +utf8+))
-                (format-redis-line "~A"  arg)))
-            all-args)))
-
-(defmethod tell ((cmd (eql 'SORT)) &rest args)
-  (flet ((send-request (key &key by get desc alpha start end)
-           (assert (or (and start end)
-                       (and (null start) (null end))))
-           (apply #'tell "SORT"
-                  (append (list key)
-                          (when by    `("BY" ,by))
-                          (when get   `("GET" ,get))
-                          (when desc  '("DESC"))
-                          (when alpha '("ALPHA"))
-                          (when start `("LIMIT" ,start ,end))))))
-    (apply #'send-request args)))
-
-(flet ((send-request (cmd key start end &key withscores)
-         (apply #'tell (princ-to-string cmd)
-                (append (list key start end)
-                        (when withscores '("WITHSCORES"))))))
-  (defmethod tell ((cmd (eql 'ZRANGE)) &rest args)
-    (apply #'send-request cmd args))
-  (defmethod tell ((cmd (eql 'ZREVRANGE)) &rest args)
-    (apply #'send-request cmd args)))
-
-(flet ((send-request (cmd key start end &key withscores limit)
-         (apply #'tell (princ-to-string cmd)
-                (append (list key start end)
-                        (when withscores '("WITHSCORES"))
-                        (when limit
-                          (assert (and (consp limit)
-                                       (atom (cdr limit))))
-                          (list "LIMIT" (car limit) (cdr limit)))))))
-  (defmethod tell ((cmd (eql 'ZRANGEBYSCORE)) &rest args)
-    (apply #'send-request cmd args))
-  (defmethod tell ((cmd (eql 'ZREVRANGEBYSCORE)) &rest args)
-    (apply #'send-request cmd args)))
-
-(flet ((send-request (cmd dstkey n keys &key weights aggregate)
-         (assert (integerp n))
-         (assert (= n (length keys)))
-         (when weights
-           (assert (= (length keys) (length weights)))
-           (assert (every #'numberp weights)))
-         (when aggregate
-           (assert (member aggregate '(:sum :min :max))))
-         (apply #'tell (princ-to-string cmd)
-                (append (list dstkey n)
-                        keys
-                        (when weights (cons "WEIGHTS" weights))
-                        (when aggregate (list "AGGREGATE" aggregate))))))
-  (defmethod tell ((cmd (eql 'ZUNIONSTORE)) &rest args)
-    (apply #'send-request cmd args))
-  (defmethod tell ((cmd (eql 'ZINTERSTORE)) &rest args)
-    (apply #'send-request cmd args)))
-
-(defmethod tell :before ((cmd (eql 'SELECT)) &rest args)
-  (when *pipelined*
-    (error "Can't use SELECT inside WITH-PIPELINING.")))
-
-(defmethod tell :before ((cmd (eql 'LINSERT)) &rest args)
-  (assert (member (second args) '(:before :after))))
+    (dolist (arg all-args)
+      (let ((arg (princ-to-string arg)))
+        (format-redis-line "$~A" (flex:octet-length arg :external-format +utf8+))
+        (format-redis-line "~A"  arg)))))
 
 
-;; receiving replies
+;;; Receiving replies.
 
 (defgeneric expect (type)
   (:documentation "Receive and process the reply of the given type from Redis server."))
@@ -150,37 +87,37 @@ CMD is the command name (a string or a symbol), and ARGS are its arguments
       (call-next-method)))
 
 (eval-always
-  (defmacro with-redis-in ((line char) &body body)
-    `(if-it (peek-char nil (conn-stream *connection*) nil nil)
-            (let ((,line (read-line (conn-stream *connection*)))
-                  (,char it))
-              (when *echo-p* (format *echo-stream* "<  ~A~%" ,line))
-              ,@body)
-            (error 'redis-bad-reply
-                   :message (fmt "Recieved empty string from server."))))
 
-  (defmacro def-expect-method (type &body body)
-    "Define a specialized EXPECT method.  BODY may refer to the ~
+(defmacro with-redis-in ((line char) &body body)
+  `(let* ((,line (read-line (conn-stream *connection*)))
+          (,char (char ,line 0)))
+     (when *echo-p* (format *echo-stream* "<  ~A~%" ,line))
+     ,@body))
+
+(defmacro def-expect-method (type &body body)
+  "Define a specialized EXPECT method.  BODY may refer to the ~
 variable REPLY, which is bound to the reply received from Redis ~
 server with the first character removed."
-    (with-unique-names (line char)
-      `(defmethod expect ((type (eql ,type)))
-         ,(fmt "Receive and process the reply of type ~A." type)
-         (with-redis-in (,line ,char)
-           (let ((reply (subseq ,line 1)))
-             (if (string= ,line "+QUEUED") "QUEUED"
-                 (case ,char
-                   (#\- (error 'redis-error-reply :message reply))
-                   ((#\+ #\: #\$ #\*) ,@body)
-                   (otherwise (error 'redis-bad-reply
-                                     :message (fmt "Received ~C as the initial reply byte."
-                                                   ,char)))))))))))
+  (with-unique-names (line char)
+    `(defmethod expect ((type (eql ,type)))
+       ,(fmt "Receive and process the reply of type ~A." type)
+       (with-redis-in (,line ,char)
+         (let ((reply (subseq ,line 1)))
+           (if (string= ,line "+QUEUED") "QUEUED"
+               (case ,char
+                 (#\- (error 'redis-error-reply :message reply))
+                 ((#\+ #\: #\$ #\*) ,@body)
+                 (otherwise
+                  (error 'redis-bad-reply
+                         :message (fmt "Received ~C as the initial reply byte."
+                                       ,char))))))))))
+) ; end of eval-always
 
 (defmethod expect ((type (eql :anything)))
   "Receive and process status reply, which is just a string, preceeded with +."
   (case (peek-char nil (conn-stream *connection*))
     (#\+ (expect :status))
-    (#\: (expect :inline))
+    (#\: (expect :integer))
     (#\$ (expect :bulk))
     (#\* (expect :multi))
     (otherwise (expect :status))))  ; will do error-signalling
@@ -206,29 +143,36 @@ server with the first character removed."
 (def-expect-method :integer
   (values (parse-integer reply)))
 
-(macrolet ((read-bulk-reply (&optional reply-transform)
-             `(let ((n (parse-integer reply)))
-                (unless (< n 0)
-                  (let ((bytes (make-array n :element-type 'flex:octet))
-                        (in (conn-stream *connection*)))
-                    (read-sequence bytes in)
-                    (read-byte in)           ; #\Return
-                    (read-byte in)           ; #\Linefeed
-                    (let ((string (flex:octets-to-string bytes :external-format +utf8+)))
-                      (when *echo-p* (format *echo-stream* "<  ~A~%" string))
-                      (if (string= string "nil") nil
-                          (if ,reply-transform (funcall ,reply-transform string)
-                              string))))))))
-  (def-expect-method :bulk
-    (read-bulk-reply))
-  (def-expect-method :float
-    (read-bulk-reply (lambda (x) (parse-float x :type 'double-float)))))
+(defmacro read-bulk-reply (&key post-processing (encoding +utf8+))
+  (with-gensyms (n bytes in str)
+    `(let ((,n (parse-integer reply)))
+       (unless (< ,n 0)
+         (let ((,bytes (make-array ,n :element-type 'flex:octet))
+               (,in (conn-stream *connection*)))
+           (read-sequence ,bytes ,in)
+           (read-byte ,in)               ; #\Return
+           (read-byte ,in)               ; #\Linefeed
+           ,(if encoding
+                `(let ((,str (flex:octets-to-string ,bytes
+                                                    :external-format ',encoding)))
+                   (when *echo-p* (format *echo-stream* "<  ~A~%" ,str))
+                   (unless (string= "nil" ,str)
+                     (if ,post-processing
+                         (funcall ,post-processing ,str)
+                         ,str)))
+                bytes))))))
+
+(def-expect-method :bulk
+  (read-bulk-reply))
 
 (def-expect-method :multi
   (let ((n (parse-integer reply)))
     (unless (= n -1)
       (loop :repeat n
-         :collect (expect :bulk)))))
+         :collect (ecase (peek-char nil (conn-stream *connection*))
+                    (#\: (expect :integer))
+                    (#\$ (expect :bulk))
+                    (#\* (expect :multi)))))))
 
 (def-expect-method :queued
   (let ((n (parse-integer reply)))
@@ -255,8 +199,15 @@ server with the first character removed."
   ;; rather than a single string
   (cl-ppcre:split " " (expect :bulk)))
 
+(def-expect-method :float
+  (read-bulk-reply :post-processing (lambda (x)
+                                      (parse-float x :type 'double-float))))
 
-;; high-level command definition
+(def-expect-method :bytes
+  (read-bulk-reply :encoding nil))
+
+
+;;; Command definition.
 
 (defparameter *cmd-prefix* 'red
   "Prefix for functions names that implement Redis commands.")
@@ -266,23 +217,29 @@ server with the first character removed."
 processing a Redis command CMD.  Here REPLY-TYPE is the expected reply
 format."
   (let ((cmd-name (intern (fmt "~:@(~A-~A~)" *cmd-prefix* cmd))))
-    `(progn
-       (defun ,cmd-name ,args
+    `(eval-always
+       (defun ,cmd ,args
          ,docstring
-         (return-from ,cmd-name
-           (with-reconnect-restart *connection*
-             ,(if-it (position '&rest args)
-                     `(apply #'tell ',cmd
-                             ,@(subseq args 0 it)
-                             ,(nth (1+ it) args))
-                     `(tell ',cmd ,@args))
+         (return-from ,cmd
+           (provide-reconnect-restart
+             ,(cond-it
+               ((position '&optional args)
+                `(apply #'tell ',cmd ,@(subseq args 0 it)
+                        (let ((optional-args (list ,@(nthcdr (1+ it) args))))
+                          (subseq optional-args 0 (position nil optional-args)))))
+               ((position '&rest args)
+                `(apply #'tell ',cmd ,@(subseq args 0 it) ,(nth (1+ it) args)))
+               (t `(tell ',cmd ,@args)))
              (prog1 (expect ,reply-type)
                (unless *pipelined*
                  (clear-input (conn-stream *connection*)))))))
-       (export ',cmd-name :redis))))
+       (abbr ,cmd-name ,cmd)
+       (export ',cmd-name '#:redis)
+       (import ',cmd '#:red)
+       (export ',cmd '#:red))))
 
 
-;; pipelining
+;; Pipelining.
 
 (defmacro with-pipelining (&body body)
   "Delay execution of EXPECT's inside BODY to the end, so that all

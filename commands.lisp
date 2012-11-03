@@ -2,10 +2,10 @@
 ;;; (c) Vsevolod Dyomkin, Oleksandr Manzyuk. see LICENSE file for permissions
 
 
-(in-package :redis)
+(in-package #:redis)
 
 
-;; Connection handling
+;;; Connection handling
 
 (def-cmd PING () :status
   "Ping server.")
@@ -23,7 +23,7 @@
   "Returns message.")
 
 
-;; Any key type commands
+;;; Any key type commands
 
 (def-cmd EXISTS (key) :boolean
   "Test if a key exists.")
@@ -61,11 +61,20 @@ As in the case of EXPIRE command, if key is updated before the timeout has
 expired, then the timeout is removed as if the PERSIST command was invoked
 on KEY.")
 
+(def-cmd PEXPIRE (key milliseconds) :boolean
+  "Set a KEY's time to live in MILLISECONDS.")
+
+(def-cmd PEXPIREAT (key milliseconds-timestamp) :boolean
+  "Set the expiration for a KEY as a Unix timestamp specified in milliseconds.")
+
 (def-cmd PERSIST (key) :boolean
   "Remove the existing timeout on KEY.")
 
 (def-cmd TTL (key) :integer
   "Get the time to live in seconds of KEY.")
+
+(def-cmd PTTL (key) :integer
+  "Get the time to live in milliseconds of KEY.")
 
 (def-cmd MOVE (key dbindex) :boolean
   "Move the key from the currently selected DB to the DB having as
@@ -80,6 +89,18 @@ index dbindex.")
                          alpha  ; Should sort be lexicographical?
                          ) :multi
   "Sort a Set or a List accordingly to the specified parameters.")
+
+(defmethod tell ((cmd (eql 'SORT)) &rest args)
+  (ds-bind (key &key by get desc alpha start end) args
+    (assert (or (and start end)
+                (and (null start) (null end))))
+    (apply #'tell "SORT"
+           (cl:append (list key)
+                      (when by    `("BY" ,by))
+                      (when get   `("GET" ,get))
+                      (when desc  '("DESC"))
+                      (when alpha '("ALPHA"))
+                      (when start `("LIMIT" ,start ,end))))))
 
 (def-cmd OBJECT-REFCOUNT (key) :integer
   "The OBJECT command allows to inspect the internals of Redis Objects
@@ -113,8 +134,32 @@ at the specified key is idle (not requested by read or write operations). While
 the value is returned in seconds the actual resolution of this timer is 10
 seconds, but may vary in future implementations.")
 
+(def-cmd DUMP (key) :bytes
+  "Return a serialized version of the value stored at the specified KEY.")
 
-;; String commands
+(def-cmd RESTORE (key ttl serialized-value) :status
+  "Create a KEY using the provided SERIALIZED-VALUE,
+previously obtained using DUMP.")
+
+(defmethod tell ((cmd (eql 'RESTORE)) &rest args)
+  (ds-bind (key ttl bytes) args
+    (format-redis-line "*~A" (1+ (length args)))
+    (dolist (arg (list cmd key ttl))
+      (let ((arg (princ-to-string arg)))
+        (format-redis-line "$~A" (flex:octet-length arg :external-format +utf8+))
+        (format-redis-line "~A"  arg)))
+    (let ((out (conn-stream *connection*)))
+      (format-redis-line "$~A" (length bytes))
+      (write-sequence bytes (flex:flexi-stream-stream out))
+      (terpri out)
+      (force-output out))))
+
+
+(def-cmd MIGRATE (host port key destination-db timeout) :status
+  "Atomically transfer a key from a Redis instance to another one.")
+
+
+;;; String commands
 
 (def-cmd SET (key value) :status
   "Set a key to a string value.")
@@ -150,16 +195,19 @@ An error is returned when seconds is invalid.")
 if none of the keys already exist.")
 
 (def-cmd INCR (key) :integer
-  "Increment the integer value of key.")
+  "Increment the integer value of KEY.")
 
-(def-cmd INCRBY (key integer) :integer
-  "Increment the integer value of key by integer.")
+(def-cmd INCRBY (key increment) :integer
+  "Increment the integer value of KEY by .")
+
+(def-cmd INCRBYFLOAT (key increment) :float
+  "Increment the float value of KEY by INCREMENT.")
 
 (def-cmd DECR (key) :integer
-  "Decrement the integer value of key.")
+  "Decrement the integer value of KEY.")
 
-(def-cmd DECRBY (key integer) :integer
-  "Decrement the integer value of key by integer.")
+(def-cmd DECRBY (key decrement) :integer
+  "Decrement the integer value of KEY by DECREMENT.")
 
 (def-cmd APPEND (key value) :integer
   "Append the specified string to the string stored at key.")
@@ -176,6 +224,17 @@ Warning: left for backwards compatibility. It is now called: GETRANGE.")
 
 (def-cmd GETBIT (key offset) :integer
   "Returns the bit value at OFFSET in the string value stored at KEY.")
+
+(def-cmd BITCOUNT (key &optional start end) :integer
+  "Count set bits in a string at KEY
+\(with optional bounding indices START and END).")
+
+(defmethod tell :before ((cmd (eql 'BITCOUNT)) &rest args)
+  (assert (or (null (second args)) (third args))))
+
+(def-cmd BITOP (operation destkey key &rest keys) :integer
+  "Perform bitwise OPERATION between strings ar KEY and KEYS
+and store the result ad DSTKEY.")
 
 (def-cmd SETRANGE (key offset value) :integer
   "Overwrites part of the string stored at KEY, starting at the specified
@@ -207,11 +266,15 @@ So -1 means the last character, -2 the penultimate and so forth.")
 (def-cmd HMSET (key &rest fields-and-values) :status
   "Set the hash FIELDS to their respective VALUES.")
 
-(def-cmd HMGET (key &rest fields) :multi
-  "Get the hash values associated with the specified fields.")
+(def-cmd HMGET (key field &rest fields) :multi
+  "Get the the values associated with the specified FIELDS in the hash
+stored at KEY.")
 
 (def-cmd HINCRBY (key field integer) :integer
   "Increment the integer value of the hash at KEY on FIELD with INTEGER.")
+
+(def-cmd HINCRBYFLOAT (key field increment) :float
+  "Increment the float value of the hash at KEY on FIELD with INCREMENT.")
 
 (def-cmd HEXISTS (key field) :boolean
   "Test for existence of a specified FIELD in a hash.")
@@ -232,7 +295,7 @@ So -1 means the last character, -2 the penultimate and so forth.")
   "Return all the fields and associated values in a hash.")
 
 
-;; List commands
+;;; List commands
 
 (def-cmd RPUSH (key value) :integer
   "Append an element to the tail of the list value at KEY.")
@@ -308,8 +371,11 @@ but does not hold a list value PIVOT.
 
 Note: before/after can only have 2 values: :before or :after.")
 
+(defmethod tell :before ((cmd (eql 'LINSERT)) &rest args)
+  (assert (member (second args) '(:before :after))))
 
-;; Set commands
+
+;;; Set commands
 
 (def-cmd SADD (key member) :boolean
   "Add the specified member to the Set value at key.")
@@ -355,11 +421,17 @@ Sets key2, ..., keyN.")
 (def-cmd SMEMBERS (key) :multi
   "Return all the members of the Set value at key.")
 
-(def-cmd SRANDMEMBER (key) :bulk
-  "Return a random member of the Set value at KEY.")
+(def-cmd SRANDMEMBER (key &optional count) :anything
+  "Get one or COUNT random members from a set at KEY.
+When called with the additional count argument,
+return an array of count distinct elements if count is positive.
+If called with a negative count the behavior changes and the command
+is allowed to return the same element multiple times.
+In this case the numer of returned elements is the absolute
+value of the specified count.")
 
 
-;; Sorted set (zset) commands
+;;; Sorted set (zset) commands
 
 (def-cmd ZADD (key score member) :boolean
   "Add the specified MEMBER to the Set value at KEY or update the
@@ -381,13 +453,22 @@ with scores being ordered from low to high.")
   "Return the rank (or index) or MEMBER in the sorted set at KEY,
 with scores being ordered from high to low.")
 
-(def-cmd ZRANGE (key start end &rest args &key withscores) :multi
+(def-cmd ZRANGE (key start end &optional withscores) :multi
   "Return a range of elements from the sorted set at KEY.")
 
-(def-cmd ZREVRANGE (key start end &rest args &key withscores) :multi
+(def-cmd ZREVRANGE (key start end &optional withscores) :multi
   "Return a range of elements from the sorted set at KEY, exactly like
 ZRANGE, but the sorted set is ordered in traversed in reverse order,
 from the greatest to the smallest score.")
+
+(macrolet ((proper-withscores ()
+             `(when (and (= 4 (length args))
+                         (last1 args))
+                (setf (car (last args)) :withscores))))
+  (defmethod tell :before ((cmd (eql 'ZRANGE)) &rest args)
+    (proper-withscores))
+  (defmethod tell :before ((cmd (eql 'ZREVRANGE)) &rest args)
+    (proper-withscores)))
 
 (def-cmd ZRANGEBYSCORE (key min max &rest args &key withscores limit) :multi
   "Returns all the elements in the sorted set at KEY with a score between
@@ -409,6 +490,19 @@ elements are considered to be ordered from high to low scores.
 The elements having the same score are returned in reverse lexicographical order.
 Apart from the reversed ordering, ZREVRANGEBYSCORE is similar to ZRANGEBYSCORE.")
 
+(flet ((send-request (cmd key start end &key withscores limit)
+         (apply #'tell (princ-to-string cmd)
+                (cl:append (list key start end)
+                           (when withscores '("WITHSCORES"))
+                           (when limit
+                             (assert (and (consp limit)
+                                          (atom (cdr limit))))
+                             (list "LIMIT" (car limit) (cdr limit)))))))
+  (defmethod tell ((cmd (eql 'ZRANGEBYSCORE)) &rest args)
+    (apply #'send-request cmd args))
+  (defmethod tell ((cmd (eql 'ZREVRANGEBYSCORE)) &rest args)
+    (apply #'send-request cmd args)))
+
 (def-cmd ZCARD (key) :integer
   "Return the cardinality (number of elements) of the sorted set at KEY.")
 
@@ -429,15 +523,33 @@ sorted set.")
 sorted set.")
 
 (def-cmd ZUNIONSTORE (dstkey n keys &rest args &key weights aggregate) :integer
-  "Perform a union over a number of sorted sets with optional
-weight and aggregate.")
+  "Perform a union in DSTKEY over a number (N) of sorted sets at KEYS
+with optional WEIGHTS and AGGREGATE.")
 
 (def-cmd ZINTERSTORE (dstkey n keys &rest args &key weights aggregate) :integer
-  "Perform an intersection over a number of sorted sets with optional
-weight and aggregate.")
+  "Perform an intersection in DSTKEY over a number (N) of sorted sets at KEYS
+with optional WEIGHTS and AGGREGATE.")
+
+(flet ((send-request (cmd dstkey n keys &key weights aggregate)
+         (assert (integerp n))
+         (assert (= n (length keys)))
+         (when weights
+           (assert (= (length keys) (length weights)))
+           (assert (every #'numberp weights)))
+         (when aggregate
+           (assert (member aggregate '(:sum :min :max))))
+         (apply #'tell (princ-to-string cmd)
+                (cl:append (list dstkey n)
+                           keys
+                           (when weights (cons "WEIGHTS" weights))
+                           (when aggregate (list "AGGREGATE" aggregate))))))
+  (defmethod tell ((cmd (eql 'ZUNIONSTORE)) &rest args)
+    (apply #'send-request cmd args))
+  (defmethod tell ((cmd (eql 'ZINTERSTORE)) &rest args)
+    (apply #'send-request cmd args)))
 
 
-;; Transaction commands
+;;; Transaction commands
 
 (def-cmd MULTI () :status
   "Redis atomic transactions' start.")
@@ -456,7 +568,7 @@ weight and aggregate.")
 If you call EXEC or DISCARD, there's no need to manually call UNWATCH.")
 
 
-;; Publish/Subscribe
+;;; Publish/Subscribe
 
 (def-cmd SUBSCRIBE (&rest channels) :pubsub
   "Redis Public/Subscribe messaging paradigm implementation.")
@@ -474,7 +586,7 @@ If you call EXEC or DISCARD, there's no need to manually call UNWATCH.")
   "Redis Public/Subscribe messaging paradigm implementation.")
 
 
-;; Server control commands
+;;; Server control commands
 
 (def-cmd SAVE () :status
   "Synchronously save the DB on disk.")
@@ -525,6 +637,31 @@ Number of expired keys")
 (def-cmd SYNC () :multi
   "Synchronize with slave.")
 
-;; not supported commands: MONITOR, SLOWLOG, DEBUG OBJECT, DEBUG SEGFAULT - use redis-cli for that
+(def-cmd SLOWLOG (subcommand &optional argument) :anything
+  "Manages the Redis slow queries log.")
+
+
+;;; Scripting commands
+
+(def-cmd EVAL (script numkeys &rest key-values) :anything
+  "Execute a Lua script server side.")
+
+(def-cmd EVALSHA (sha1 numkeys &rest key-values) :anything
+  "Execute a stored Lua script server side.")
+
+(def-cmd SCRIPT-LOAD (script) :bulk
+  "Load the specified Lua script into the script cache.")
+
+(def-cmd SCRIPT-EXISTS (script &rest scripts) :multi
+  "Check existence of scripts in the script cache.")
+
+(def-cmd SCRIPT-KILL () :status
+  "Kill the script currently in execution.")
+
+(def-cmd SCRIPT-FLUSH () :status
+  "Remove all the scripts from the script cache.")
+
+
+;;; not supported commands: MONITOR, SLOWLOG, DEBUG OBJECT, DEBUG SEGFAULT - use redis-cli for that
 
 ;;; end

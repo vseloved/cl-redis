@@ -3,10 +3,10 @@
 
 (in-package :cl-user)
 
-(defpackage :redis
-  (:use :common-lisp #:rutil)
+(defpackage #:redis
+  (:use #:common-lisp #:rutil)
+  (:shadow #:quit #:sort #:set #:get #:substr #:eval #:type #:append)
   (:export #:redis-connection
-
            #:connect
            #:disconnect
            #:reconnect
@@ -16,6 +16,7 @@
            #:connected-p
            #:with-connection
            #:with-recursive-connection
+           #:with-persistent-connection
 
            #:*echo-p*
            #:*echo-stream*
@@ -33,4 +34,7 @@
            #:redis-connection-error
 
            #:with-pipelining))
+
+(defpackage #:red)
+
 ;;; end
