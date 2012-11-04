@@ -5,9 +5,10 @@
 
 (defsystem #:cl-redis
   :version "2.3.1"
+  :author "Vsevolod Dyomkin <vseloved@gmail.com>, Oleksandr Manzyuk <manzyuk@gmail.com>"
   :maintainer "Vsevolod Dyomkin <vseloved@gmail.com>"
   :licence "MIT"
-  :description "Redis database client, using iolib interface."
+  :description "A fast and robust Common Lisp client for Redis"
   :depends-on (#:rutils #:cl-ppcre #:usocket #:flexi-streams)
   :serial t
   :components ((:file "package")
@@ -24,6 +25,7 @@
 
 (defsystem #:cl-redis-test
   :version "2.3.1"
+  :author "Vsevolod Dyomkin <vseloved@gmail.com>"
   :maintainer "Vsevolod Dyomkin <vseloved@gmail.com>"
   :licence "MIT"
   :description "CL-Redis test suite"

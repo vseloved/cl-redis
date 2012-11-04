@@ -1,4 +1,4 @@
-# CL-REDIS — a fast and robust Common Lisp client for Redis
+# CL-REDIS — A fast and robust Common Lisp client for Redis
   (tested with Redis version 2.6)
 
 ## Quickstart
