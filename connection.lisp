@@ -4,7 +4,7 @@
 (in-package :redis)
 
 
-;;; Debugging support.
+;;; Debugging support
 
 (defvar *echo-p* nil
   "Whether the server-client communication should be echoed to the
@@ -16,7 +16,7 @@ echoing.")
 for debugging purposes.  The default is *STANDARD-OUTPUT*.")
 
 
-;;; Low-level connection handling.
+;;; Low-level connection handling
 
 (defvar *connection* nil "The current Redis connection.")
 
@@ -72,7 +72,7 @@ Redis socket: ~A" e)))))
   (open-connection conn))
 
 
-;;; Top-level API.
+;;; Top-level API
 
 (defun connected-p ()
   "Is there a current connection?"
@@ -112,18 +112,24 @@ specified by the given HOST and PORT"
        (disconnect))))
 
 
-;;; Handling connection errors.
+;;; Handling connection errors
 
-(defmacro with-reconnect-restart ((&key error comment) &body body)
+(defmacro reconnect-restart-case ((&key error comment) &body body)
   "Signal the condition of type REDIS-CONNECTION-ERROR denoted by
 the given ERROR and COMMENT offering a :RECONNECT restart to re-evaluate BODY."
-  `(restart-case (error 'redis-connection-error :error ,error :comment ,comment)
-     (:reconnect ()
-       :report "Try to reconnect and repeat action."
-       (reconnect)
-       ,@body)))
+  `(if *pipelined*
+       ;; don't intercept connection-errors inside a pipeline -
+       ;; it will be done on the highest level of a pipeline to allow
+       ;; the whole pipeline (with possible nestsed pipelines) to restart
+       (progn ,@body)
+       (restart-case (error 'redis-connection-error
+                            :error ,error :comment ,comment)
+         (:reconnect ()
+           :report "Try to reconnect and repeat action."
+           (reconnect)
+           ,@body))))
 
-(defmacro provide-reconnect-restart (&body body)
+(defmacro with-reconnect-restart (&body body)
   "When, during the execution of BODY, an error occurs that breaks
 the connection, a REDIS-CONNECTION-ERROR is signalled,
 offering a :RECONNECT restart that will re-evaluate body after
@@ -133,16 +139,16 @@ the conenction is re-established."
        (usocket:connection-refused-error (,e)
          ;; Errors of this type commonly occur when there is no Redis server
          ;; running, or when one tries to connect to the wrong host or port.
-         (with-reconnect-restart (:error ,e
-                                  :comment "Make sure Redis server is running ~
-                                         and check your connection parameters.")
+         (reconnect-restart-case
+           (:error ,e
+            :comment "Make sure Redis server is running and check your connection parameters.")
            ,@body))
        ((or usocket:socket-error stream-error end-of-file) (,e)
-         (with-reconnect-restart (:error ,e)
+         (reconnect-restart-case (:error ,e)
            ,@body)))))
 
 
-;; convenience macros
+;;; Convenience macros
 
 (defmacro with-recursive-connection ((&key (host #(127 0 0 1))
                                            (port 6379))

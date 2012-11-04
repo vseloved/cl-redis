@@ -122,7 +122,10 @@ Compare execution times in the following examples
       ;; 2023.924 seconds of real time
       ;; 3.560222 seconds of total run time (2.976186 user, 0.584036 system)
 
-Note, that `with-pipelining` calls may nest.
+Note, that `with-pipelining` calls theoretically may nest,
+but the results will only be available to the highest-level pipeline,
+all the nested pipelines will return :PIPELINED.
+So a warining is signalled in this situation.
 
 
 ## Internals

@@ -3,11 +3,7 @@
 
 (in-package #:redis)
 
-(eval-always
-  (defparameter +utf8+ '(:utf-8 :eol-style :crlf)))
-
-(defvar *pipelined* nil)
-(defvar *pipeline* nil)
+(eval-always (defparameter +utf8+ '(:utf-8 :eol-style :crlf)))
 
 
 ;; Utils.
@@ -23,7 +19,7 @@ If *ECHOP-P* is not NIL, write that string to *ECHO-STREAM*, too."
     (terpri out)))
 
 
-;;; Conditions.
+;;; Conditions
 
 (define-condition redis-error (error)
   ((error
@@ -54,7 +50,7 @@ that break the connection stream.  They offer a :RECONNECT restart."))
   (:documentation "Redis protocol error is detected."))
 
 
-;;; Sending commands to the server.
+;;; Sending commands to the server
 
 (defgeneric tell (cmd &rest args)
   (:documentation "Send a command to Redis server over a socket connection.
@@ -75,7 +71,32 @@ CMD is the command name (a string or a symbol), and ARGS are its arguments
         (format-redis-line "~A"  arg)))))
 
 
-;;; Receiving replies.
+;; Pipelining
+
+(defvar *pipelined* nil
+  "Indicates, that commands are sent in pipelined mode.")
+
+(defvar *pipeline* nil
+  "A list of expected results from the current pipeline.")
+
+(defmacro with-pipelining (&body body)
+  "Delay execution of EXPECT's inside BODY to the end, so that all
+commands are first sent to the server and then their output is received
+and collected into a list.  So commands return :PIPELINED instead of the
+expected results."
+  (let ((get-results '(mapcar #'expect (reverse *pipeline*))))
+    `(if *pipelined*
+         (progn
+           (warn "Already in a pipeline.")
+           ,@body)
+         (with-reconnect-restart
+           (let (*pipeline*)
+             (let ((*pipelined* t))
+               ,@body)
+             ,get-results)))))
+
+
+;;; Receiving replies
 
 (defgeneric expect (type)
   (:documentation "Receive and process the reply of the given type from Redis server."))
@@ -207,7 +228,7 @@ server with the first character removed."
   (read-bulk-reply :encoding nil))
 
 
-;;; Command definition.
+;;; Command definition
 
 (defparameter *cmd-prefix* 'red
   "Prefix for functions names that implement Redis commands.")
@@ -221,7 +242,7 @@ format."
        (defun ,cmd ,args
          ,docstring
          (return-from ,cmd
-           (provide-reconnect-restart
+           (with-reconnect-restart
              ,(cond-it
                ((position '&optional args)
                 `(apply #'tell ',cmd ,@(subseq args 0 it)
@@ -237,19 +258,5 @@ format."
        (export ',cmd-name '#:redis)
        (import ',cmd '#:red)
        (export ',cmd '#:red))))
-
-
-;; Pipelining.
-
-(defmacro with-pipelining (&body body)
-  "Delay execution of EXPECT's inside BODY to the end, so that all
-commands are first sent to the server and then their output is received
-and collected into a list.  So commands return :PIPELINED instead of the
-expected results."
-  `(let (*pipeline*)
-     (let ((*pipelined* t))
-       ,@body)
-     (mapcar #'expect
-             (nreverse *pipeline*))))
 
 ;;; end

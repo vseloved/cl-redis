@@ -628,7 +628,12 @@
     (cumulative-and
      (check equal '("PONG" 0) (with-pipelining
                                 (red-ping)
-                                (red-dbsize))))))
+                                (red-dbsize)))
+     (handler-bind ((warning #`(invoke-restart (find-restart 'muffle-warning %))))
+       (check equal '("PONG" "PONG") (with-pipelining
+                                       (red-ping)
+                                       (with-pipelining
+                                         (red-ping))))))))
 
 
 (deftest server ()
