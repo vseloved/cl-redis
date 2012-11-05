@@ -22,13 +22,12 @@ If *ECHOP-P* is not NIL, write that string to *ECHO-STREAM*, too."
 ;;; Conditions
 
 (define-condition redis-error (error)
-  ((error
-    :initarg :error
-    :reader redis-error-error)
-   (message
-    :initform nil
-    :initarg :message
-    :reader redis-error-message))
+  ((error :initform nil
+          :initarg :error
+          :reader redis-error-error)
+   (message :initform nil
+            :initarg :message
+            :reader redis-error-message))
   (:report (lambda (e stream)
              (format stream
                      "Redis error: ~A~:[~;~2&~:*~A~]"
@@ -84,16 +83,15 @@ CMD is the command name (a string or a symbol), and ARGS are its arguments
 commands are first sent to the server and then their output is received
 and collected into a list.  So commands return :PIPELINED instead of the
 expected results."
-  (let ((get-results '(mapcar #'expect (reverse *pipeline*))))
-    `(if *pipelined*
-         (progn
-           (warn "Already in a pipeline.")
-           ,@body)
-         (with-reconnect-restart
-           (let (*pipeline*)
-             (let ((*pipelined* t))
-               ,@body)
-             ,get-results)))))
+  `(if *pipelined*
+       (progn
+         (warn "Already in a pipeline.")
+         ,@body)
+       (with-reconnect-restart
+         (let (*pipeline*)
+           (let ((*pipelined* t))
+             ,@body)
+           (mapcar #'expect (reverse *pipeline*))))))
 
 
 ;;; Receiving replies

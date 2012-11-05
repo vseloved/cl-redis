@@ -102,6 +102,10 @@
 
 
 (deftest connection ()
+  (check null (disconnect))
+  (check redis::connection-open-p (connect))
+  (check-errs (connect) redis-error)
+  (check null (disconnect))
   (with-connection ()
     (check string= "Hello World!" (red-echo "Hello World!"))
     (check-errs (red-auth "pass"))

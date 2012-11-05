@@ -82,10 +82,10 @@ Redis socket: ~A" e)))))
   "Connect to Redis server."
   (when (connected-p)
     (restart-case (error 'redis-error
-                         :comment "A connection to Redis server is already established.")
+                         :error "A connection to Redis server is already established.")
       (:leave ()
         :report "Leave it."
-        )
+        (return-from connect))
       (:replace ()
         :report "Replace it with a new connection."
         (disconnect))))
@@ -95,8 +95,9 @@ Redis socket: ~A" e)))))
 
 (defun disconnect ()
   "Disconnect from Redis server."
-  (close-connection *connection*)
-  (setf *connection* nil))
+  (when *connection*
+    (close-connection *connection*)
+    (setf *connection* nil)))
 
 (defun reconnect ()
   "Close and reopen the connection to Redis server."
