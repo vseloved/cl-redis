@@ -164,6 +164,7 @@ See `commands.lisp` for all defined commands.
 - The following commands are not implemented,
   because they are not intended for use in client:
   `MONITOR`, `DEBUG OBJECT`, and `DEBUG SEGFAULT`.
+- Support for Unix domain sockets — planned
 - [Consistent hashing](http://en.wikipedia.org/wiki/Consistent_hashing)
   isn't built-in.  Actually, such thing is orthogonal to the functionality
   of this library and, probably, should be implemented in a separate library.
