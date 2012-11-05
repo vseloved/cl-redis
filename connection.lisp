@@ -88,9 +88,10 @@ Redis socket: ~A" e)))))
         )
       (:replace ()
         :report "Replace it with a new connection."
-        (disconnect)
-        (setf *connection* (make-instance 'redis-connection
-                                          :host host :port port))))))
+        (disconnect))))
+  (setf *connection* (make-instance 'redis-connection
+                                    :host host :port port)))
+
 
 (defun disconnect ()
   "Disconnect from Redis server."

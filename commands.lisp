@@ -267,7 +267,7 @@ So -1 means the last character, -2 the penultimate and so forth.")
   "Set the hash FIELDS to their respective VALUES.")
 
 (def-cmd HMGET (key field &rest fields) :multi
-  "Get the the values associated with the specified FIELDS in the hash
+  "Get the values associated with the specified FIELDS in the hash
 stored at KEY.")
 
 (def-cmd HINCRBY (key field integer) :integer
@@ -662,6 +662,6 @@ Number of expired keys")
   "Remove all the scripts from the script cache.")
 
 
-;;; not supported commands: MONITOR, SLOWLOG, DEBUG OBJECT, DEBUG SEGFAULT - use redis-cli for that
+;;; not supported commands: MONITOR, DEBUG OBJECT, DEBUG SEGFAULT - use redis-cli for that
 
 ;;; end

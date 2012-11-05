@@ -4,7 +4,7 @@
 (in-package :asdf)
 
 (defsystem #:cl-redis
-  :version "2.3.1"
+  :version "2.3.2"
   :author "Vsevolod Dyomkin <vseloved@gmail.com>, Oleksandr Manzyuk <manzyuk@gmail.com>"
   :maintainer "Vsevolod Dyomkin <vseloved@gmail.com>"
   :licence "MIT"
