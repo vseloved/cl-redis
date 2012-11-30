@@ -3,9 +3,11 @@
 
 (in-package :cl-user)
 
+
 (defpackage #:redis
   (:use #:common-lisp #:rutil)
-  (:shadow #:quit #:sort #:set #:get #:substr #:eval #:type #:append)
+  (:shadow #:quit #:sort #:set #:get #:substr #:eval #:type #:append
+           #:watch #:unwatch #:shutdown)
   (:export #:redis-connection
            #:connect
            #:disconnect
@@ -35,6 +37,10 @@
 
            #:with-pipelining))
 
-(defpackage #:red)
+(defpackage #:red
+  (:shadowing-import-from #:redis
+   #:quit #:sort #:set #:get #:substr #:eval #:type #:append
+   #:watch #:unwatch #:shutdown))
+
 
 ;;; end
