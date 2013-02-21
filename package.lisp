@@ -38,9 +38,7 @@
            #:with-pipelining))
 
 (defpackage #:red
-  (:shadowing-import-from #:redis
-   #:quit #:sort #:set #:get #:substr #:eval #:type #:append
-   #:watch #:unwatch #:shutdown))
+  (:use #| nothing |# ))
 
 
 ;;; end

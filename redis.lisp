@@ -3,8 +3,6 @@
 
 (in-package #:redis)
 
-(eval-always (defparameter +utf8+ '(:utf-8 :eol-style :crlf)))
-
 
 ;; Utils.
 
