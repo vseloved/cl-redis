@@ -128,7 +128,7 @@ the given ERROR and COMMENT offering a :RECONNECT restart to re-evaluate BODY."
        ;; the whole pipeline (with possible nestsed pipelines) to restart
        (progn ,@body)
        (restart-case (error 'redis-connection-error
-                            :error ,error :comment ,comment)
+                            :error ,error :message ,comment)
          (:reconnect ()
            :report "Try to reconnect and repeat action."
            (reconnect)
@@ -146,7 +146,7 @@ the conenction is re-established."
          ;; running, or when one tries to connect to the wrong host or port.
          (reconnect-restart-case
            (:error ,e
-            :comment "Make sure Redis server is running and check your connection parameters.")
+            :message "Make sure Redis server is running and check your connection parameters.")
            ,@body))
        ((or usocket:socket-error stream-error end-of-file) (,e)
          (reconnect-restart-case (:error ,e)
