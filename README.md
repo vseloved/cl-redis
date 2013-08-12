@@ -1,7 +1,9 @@
 # CL-REDIS — A fast and robust Common Lisp client for Redis
   (tested with Redis version 2.6)
 
-## Quickstart
+## Usage
+
+### Quickstart
 
 1. Make sure a Redis server is running.
 2. `(ql:quickload 'cl-redis)`
@@ -20,18 +22,29 @@
    bound to this new connection, and ensures that the connection is closed
    afterwards.
 
-The system provides 2 packages: `REDIS` and `RED`.  All the functionality is
-available from the `REDIS` package.  Not to cause symbol clashes,
-Redis commands are defined in this package with a prefix (which default to `red-`
-and is set at compilation time).  The `RED` package is a syntactic sugar —
-it just provides the Redis commands without a prefix.  So it is not intended
-to be imported to avoid symbol conflicts with package `COMMON-LISP`.
-
-So, the same Redis command (for instance `GET`) can be called as
-`REDIS:RED-GET` or `RED:GET`.
+### Available commands
 
 
-## Dependencies
+
+### Code organization
+
+The system provides 2 packages: `REDIS` and `RED`.  All the
+functionality is available from the `REDIS` package.  Not to cause
+symbol clashes, Redis commands are defined in this package with a
+prefix (which defaults to `red-` and is set at compilation time).
+The package `RED` is a syntactic sugar — it just provides the Redis
+commands without a prefix.  So it is not intended to be imported to
+avoid symbol conflicts with package `COMMON-LISP` — just use the
+package-qualified symbol names: i.e. the same Redis command (for
+instance `GET`) can be called as `RED-GET` (if you import the `REDIS` package)
+or `RED:GET`.
+
+
+## Installation
+
+Available through [quicklisp](http://quicklisp.org/).
+
+### Dependencies
 
 - [usocket](http://common-lisp.net/project/usocket/)
 - [flexi-streams](http://common-lisp.net/project/flexi-streams/)
@@ -40,7 +53,7 @@ So, the same Redis command (for instance `GET`) can be called as
   [bordeaux-threads](http://common-lisp.net/project/bordeaux-threads)
 
 
-## Debugging, testing and error recovery
+## Debugging and error recovery
 
 If `*echo-p*` is `T`, all client-server communications will be
 echoed to the stream `*echo-stream*`, which defaults to `*standard-output*`.
@@ -63,7 +76,9 @@ that tries to do the right thing™
 (i.e. automatically reopen the connection once, if it is broken).
 
 
-## PubSub example
+## Advanced usage
+
+### PubSub
 
 Since there's no special command to receive messages from Redis via PubSub
 here's how you do it:
@@ -80,8 +95,7 @@ To publish, obviously:
     (with-connection ()
       (red:publish "foo" "test"))
 
-
-## Pipelining example
+### Pipelining
 
 For better performance Redis allows to pipeline commands
 and delay receiving results until the end,
@@ -173,3 +187,20 @@ See `commands.lisp` for all defined commands.
   Persistent connections are more simple, efficient and less error-prone
   for dedicated threads.  But there are other use-cases for pooling,
   so it will probably be implemented in future releases.
+
+
+## Credits
+
+The library is developed and maintained by Vsevolod Dyomkin
+<vseloved@gmail.com>.
+
+At the initial stages Alexandr Manzyuk <manzyuk@googlemail.com>
+developed the connection handling code following the implementation in
+[Postmodern](http://common-lisp.net/project/postmodern/). It was since
+partially rewritten to accommodate more advanced connection handling
+strategies, like persistent connection.
+
+
+## License
+
+MIT (See LICENSE file for details).

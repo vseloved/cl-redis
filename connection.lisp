@@ -146,7 +146,7 @@ the conenction is re-established."
          ;; running, or when one tries to connect to the wrong host or port.
          (reconnect-restart-case
            (:error ,e
-            :message "Make sure Redis server is running and check your connection parameters.")
+            :comment "Make sure Redis server is running and check your connection parameters.")
            ,@body))
        ((or usocket:socket-error stream-error end-of-file) (,e)
          (reconnect-restart-case (:error ,e)
