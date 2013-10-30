@@ -87,11 +87,14 @@ index dbindex.")
                          get    ; A pattern or a list of patterns.
                          desc   ; Should sort be descending?
                          alpha  ; Should sort be lexicographical?
-                         ) :multi
+                         store  ; Store result into key
+                         ) (if store
+                               :integer
+                               :multi)
   "Sort a Set or a List accordingly to the specified parameters.")
 
 (defmethod tell ((cmd (eql 'SORT)) &rest args)
-  (ds-bind (key &key by get desc alpha start end) args
+  (ds-bind (key &key by get desc alpha start end store) args
     (assert (or (and start end)
                 (and (null start) (null end))))
     (apply #'tell "SORT"
@@ -100,7 +103,8 @@ index dbindex.")
                       (when get   `("GET" ,get))
                       (when desc  '("DESC"))
                       (when alpha '("ALPHA"))
-                      (when start `("LIMIT" ,start ,end))))))
+                      (when start `("LIMIT" ,start ,end))
+                      (when store `("STORE" ,store))))))
 
 (def-cmd OBJECT-REFCOUNT (key) :integer
   "The OBJECT command allows to inspect the internals of Redis Objects
