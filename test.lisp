@@ -175,21 +175,37 @@
     (check true                    (red-set "weight_3" "32"))
     (check true                    (red-set "вага_3" "32"))
     (check equal '("1" "2" "3")    (red-sort "numbers"))
+    (check = 3                     (red-sort "numbers" :store "stored"))
+    (check equal '("1" "2" "3")    (red-lrange "stored" 0 -1))
     (check equal '("1" "2" "3")    (red-sort "числа"))
     (check equal '("2" "3")        (red-sort "numbers" :start 1 :end 2))
+    (check = 2                     (red-sort "numbers" :start 1 :end 2 :store "stored"))
+    (check equal '("2" "3")        (red-lrange "stored" 0 -1))
     (check equal '("2" "3")        (red-sort "числа" :start 1 :end 2))
     (check equal '("3" "2" "1")    (red-sort "numbers" :desc t))
+    (check = 3                     (red-sort "numbers" :desc t :store "stored"))
+    (check equal '("3" "2" "1")    (red-lrange "stored" 0 -1))
     (check equal '("2" "1")        (red-sort "numbers" :desc t :start 1 :end 2))
+    (check = 2                     (red-sort "numbers" :desc t :start 1 :end 2 :store "stored"))
+    (check equal '("2" "1")        (red-lrange "stored" 0 -1))
     (check equal '("3" "2" "1")    (red-sort "числа" :desc t))
     (check equal '("2" "1")        (red-sort "числа" :desc t :start 1 :end 2))
     (check equal '("2" "3" "1")    (red-sort "numbers" :by "weight_*"))
+    (check = 3                     (red-sort "numbers" :by "weight_*" :store "stored"))
+    (check equal '("2" "3" "1")    (red-lrange "stored" 0 -1))
     (check equal '("2" "3" "1")    (red-sort "числа" :by "вага_*"))
     (check equal '("o2" "o3" "o1") (red-sort "numbers" :by "weight_*"
                                              :get "object_*"))
+    (check = 3                     (red-sort "numbers" :by "weight_*"
+                                             :get "object_*" :store "stored"))
+    (check equal '("o2" "o3" "o1") (red-lrange "stored" 0 -1))
     (check equal '("о2" "о3" "о1") (red-sort "числа" :by "вага_*"
                                              :get "об'єкт_*"))
     (check equal '("o1" "o3" "o2") (red-sort "numbers" :by "weight_*"
                                              :get "object_*" :desc t))
+    (check = 2                     (red-sort "numbers" :by "weight_*"
+                                             :get "object_*" :desc t :store "stored"))
+    (check equal '("o1" "o3" "o2") (red-lrange "stored" 0 -1))
     (check equal '("о1" "о3" "о2") (red-sort "числа" :by "вага_*"
                                              :get "об'єкт_*" :desc t))
     ))
