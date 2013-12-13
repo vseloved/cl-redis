@@ -58,7 +58,8 @@ set the socket of CONN to the associated socket."
                                         (conn-host conn) (conn-port conn)
                                         :element-type 'flex:octet)))
                                 :external-format +utf8+
-                                :element-type 'flex:octet)))
+                                #-lispworks :element-type
+                                #-lispworks 'flex:octet)))
 
 (defun close-connection (conn)
   "Close the socket of CONN."
