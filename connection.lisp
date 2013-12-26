@@ -149,7 +149,8 @@ the conenction is re-established."
            (:error ,e
             :comment "Make sure Redis server is running and check your connection parameters.")
            ,@body))
-       ((or usocket:socket-error stream-error end-of-file) (,e)
+       ((or usocket:socket-error stream-error end-of-file
+            #+lispworks comm:socket-error) (,e)
          (reconnect-restart-case (:error ,e)
            ,@body)))))
 
