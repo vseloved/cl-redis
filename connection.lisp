@@ -32,6 +32,10 @@ for debugging purposes.  The default is *STANDARD-OUTPUT*.")
     :initarg  :port
     :initform 6379
     :reader   conn-port)
+   (auth
+    :initarg  :auth
+    :initform nil
+    :reader conn-auth)
    (socket
     :initform nil
     :accessor conn-socket)
@@ -59,7 +63,12 @@ set the socket of CONN to the associated socket."
                                         :element-type 'flex:octet)))
                                 :external-format +utf8+
                                 #-lispworks :element-type
-                                #-lispworks 'flex:octet)))
+                                #-lispworks 'flex:octet))
+  (when (conn-auth conn)
+    (let ((*connection* conn)) ; AUTH needs *CONNECTION* to be bound
+                               ; to the current connection.  At this
+                               ; stage, *CONNECTION* is not bound yet.
+      (auth (conn-auth conn)))))
 
 (defun close-connection (conn)
   "Close the socket of CONN."
@@ -82,7 +91,7 @@ Redis socket: ~A" e)))))
   "Is there a current connection?"
   (and *connection* (connection-open-p *connection*)))
 
-(defun connect (&key (host #(127 0 0 1)) (port 6379))
+(defun connect (&key (host #(127 0 0 1)) (port 6379) auth)
   "Connect to Redis server."
   (when (connected-p)
     (restart-case (error 'redis-error
@@ -94,7 +103,7 @@ Redis socket: ~A" e)))))
         :report "Replace it with a new connection."
         (disconnect))))
   (setf *connection* (make-instance 'redis-connection
-                                    :host host :port port)))
+                                    :host host :port port :auth auth)))
 
 
 (defun disconnect ()
@@ -108,12 +117,13 @@ Redis socket: ~A" e)))))
   (reopen-connection *connection*))
 
 (defmacro with-connection ((&key (host #(127 0 0 1))
-                                 (port 6379))
+                                 (port 6379)
+                                 auth)
                            &body body)
   "Evaluate BODY with the current connection bound to a new connection
 specified by the given HOST and PORT"
   `(let ((*connection* (make-instance 'redis-connection
-                                      :host ,host :port ,port)))
+                                      :host ,host :port ,port :auth ,auth)))
      (unwind-protect (progn ,@body)
        (disconnect))))
 
