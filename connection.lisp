@@ -168,22 +168,24 @@ the conenction is re-established."
 ;;; Convenience macros
 
 (defmacro with-recursive-connection ((&key (host #(127 0 0 1))
-                                           (port 6379))
+                                           (port 6379)
+                                           auth)
                                      &body body)
   "Execute BODY with *CONNECTION* bound to the default Redis
 connection. If connection is already established, reuse it."
   `(if (connected-p)
        (progn ,@body)
-       (with-connection (:host ,host :port ,port)
+       (with-connection (:host ,host :port ,port :auth ,auth)
          ,@body)))
 
 (defmacro with-persistent-connection ((&key (host #(127 0 0 1))
-                                            (port 6379))
+                                            (port 6379)
+                                            auth)
                                       &body body)
   "Execute BODY inside WITH-CONNECTION. But if connection is broken
 due to REDIS-CONNECTION-ERROR (a network error or timeout),
 transparently reopen it."
-  `(with-connection (:host ,host :port ,port)
+  `(with-connection (:host ,host :port ,port :auth ,auth)
      (handler-bind ((redis-connection-error
                      (lambda (e)
                        (declare (ignore e))
