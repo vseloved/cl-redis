@@ -29,13 +29,12 @@
   :maintainer "Vsevolod Dyomkin <vseloved@gmail.com>"
   :licence "MIT"
   :description "CL-Redis test suite"
-  :depends-on (#:cl-redis #:bordeaux-threads #:flexi-streams #:nuts)
+  :depends-on (#:cl-redis #:bordeaux-threads #:flexi-streams #:should-test)
   :components ((:file "test")))
 
 (defmethod perform ((o test-op)
                     (c (eql (find-system 'cl-redis-test))))
-  (operate 'load-op '#:cl-redis-test)
-  (funcall (intern (symbol-name 'run-all-tests)
-                   '#:cl-redis-test)))
+  (asdf:load-system '#:cl-redis-test)
+  (funcall (read-from-string "cl-redis-test:run-tests")))
 
 ;;; end
