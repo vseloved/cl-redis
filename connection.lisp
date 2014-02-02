@@ -32,6 +32,10 @@ for debugging purposes.  The default is *STANDARD-OUTPUT*.")
     :initarg  :port
     :initform 6379
     :reader   conn-port)
+   (auth
+    :initarg  :auth
+    :initform nil
+    :reader conn-auth)
    (socket
     :initform nil
     :accessor conn-socket)
@@ -58,7 +62,13 @@ set the socket of CONN to the associated socket."
                                         (conn-host conn) (conn-port conn)
                                         :element-type 'flex:octet)))
                                 :external-format +utf8+
-                                :element-type 'flex:octet)))
+                                #-lispworks :element-type
+                                #-lispworks 'flex:octet))
+  (when (conn-auth conn)
+    (let ((*connection* conn)) ; AUTH needs *CONNECTION* to be bound
+                               ; to the current connection.  At this
+                               ; stage, *CONNECTION* is not bound yet.
+      (auth (conn-auth conn)))))
 
 (defun close-connection (conn)
   "Close the socket of CONN."
@@ -81,7 +91,7 @@ Redis socket: ~A" e)))))
   "Is there a current connection?"
   (and *connection* (connection-open-p *connection*)))
 
-(defun connect (&key (host #(127 0 0 1)) (port 6379))
+(defun connect (&key (host #(127 0 0 1)) (port 6379) auth)
   "Connect to Redis server."
   (when (connected-p)
     (restart-case (error 'redis-error
@@ -93,7 +103,7 @@ Redis socket: ~A" e)))))
         :report "Replace it with a new connection."
         (disconnect))))
   (setf *connection* (make-instance 'redis-connection
-                                    :host host :port port)))
+                                    :host host :port port :auth auth)))
 
 
 (defun disconnect ()
@@ -107,12 +117,13 @@ Redis socket: ~A" e)))))
   (reopen-connection *connection*))
 
 (defmacro with-connection ((&key (host #(127 0 0 1))
-                                 (port 6379))
+                                 (port 6379)
+                                 auth)
                            &body body)
   "Evaluate BODY with the current connection bound to a new connection
 specified by the given HOST and PORT"
   `(let ((*connection* (make-instance 'redis-connection
-                                      :host ,host :port ,port)))
+                                      :host ,host :port ,port :auth ,auth)))
      (unwind-protect (progn ,@body)
        (disconnect))))
 
@@ -148,7 +159,8 @@ the conenction is re-established."
            (:error ,e
             :comment "Make sure Redis server is running and check your connection parameters.")
            ,@body))
-       ((or usocket:socket-error stream-error end-of-file) (,e)
+       ((or usocket:socket-error stream-error end-of-file
+            #+lispworks comm:socket-error) (,e)
          (reconnect-restart-case (:error ,e)
            ,@body)))))
 
@@ -156,22 +168,24 @@ the conenction is re-established."
 ;;; Convenience macros
 
 (defmacro with-recursive-connection ((&key (host #(127 0 0 1))
-                                           (port 6379))
+                                           (port 6379)
+                                           auth)
                                      &body body)
   "Execute BODY with *CONNECTION* bound to the default Redis
 connection. If connection is already established, reuse it."
   `(if (connected-p)
        (progn ,@body)
-       (with-connection (:host ,host :port ,port)
+       (with-connection (:host ,host :port ,port :auth ,auth)
          ,@body)))
 
 (defmacro with-persistent-connection ((&key (host #(127 0 0 1))
-                                            (port 6379))
+                                            (port 6379)
+                                            auth)
                                       &body body)
   "Execute BODY inside WITH-CONNECTION. But if connection is broken
 due to REDIS-CONNECTION-ERROR (a network error or timeout),
 transparently reopen it."
-  `(with-connection (:host ,host :port ,port)
+  `(with-connection (:host ,host :port ,port :auth ,auth)
      (handler-bind ((redis-connection-error
                      (lambda (e)
                        (declare (ignore e))

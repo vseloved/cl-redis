@@ -230,6 +230,10 @@
             (red-set "вага_3" "32"))
     (should be equal '("1" "2" "3")
             (red-sort "numbers"))
+    (should be = 3
+            (red-sort "numbers" :store "stored"))
+    (should be equal '("1" "2" "3")
+            (red-lrange "stored" 0 -1))
     (should be equal '("1" "2" "3")
             (red-sort "числа"))
     (should be equal '("2" "3")
