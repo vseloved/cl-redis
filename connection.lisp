@@ -214,18 +214,14 @@ pool at the same time.")
 is present)."
   `(bordeaux-threads:with-lock-held (*pool-lock*) ,@body))
 
-(defun get-from-pool (&optional group)
+(defun get-from-pool (&optional (group "default"))
   "Get a database connection from the specified pool, returns nil if
 no connection was available."
-  (when (null group)
-    (setf group "default"))
   (with-pool-lock
     (pop (gethash group *connection-pools*))))
 
-(defun return-to-pool (connection &optional group)
+(defun return-to-pool (connection &optional (group "default"))
   "Return the database connection to the specified pool."
-  (when (null group)
-    (setf group "default"))
   (macrolet ((the-pool ()
          '(gethash group *connection-pools* ())))
     (when (connection-open-p connection)
