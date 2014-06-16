@@ -227,7 +227,9 @@ no connection was available."
     (when (connection-open-p connection)
       (with-pool-lock
     (if (or (not *max-pool-size*) (< (length (the-pool)) *max-pool-size*))
-        (push connection (the-pool)))))
+        (push connection (the-pool))
+        (if (connection-open-p connection)
+            (close-connection connection)))))
     (values)))
 
 (defun clear-connection-pool ()
