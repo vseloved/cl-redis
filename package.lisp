@@ -35,7 +35,16 @@
            #:redis-error-reply
            #:redis-connection-error
 
-           #:with-pipelining))
+           #:with-pipelining
+           
+           #:*min-pool-size*
+           #:*max-pool-size*
+           #:*connection-pools*
+           #:get-from-pool
+           #:return-to-pool
+           #:clear-connection-pool
+           #:init-connection-pool
+           #:with-connection-in-pool))
 
 (defpackage #:red
   (:use #| nothing |# ))
