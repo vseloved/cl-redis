@@ -193,4 +193,70 @@ transparently reopen it."
                        (invoke-restart :reconnect))))
        ,@body)))
 
+
+;;; Connection pools
+
+(defvar *min-pool-size* 5
+  "The mininum amount of connection that will be initial into connection pool.")
+(defvar *max-pool-size* nil
+  "The maxinum amount of connection that will be kept in a single pool, or NIL for no maximum.")
+
+(defvar *connection-pools* (make-hash-table :test 'equal)
+  "Maps pool specifiers to lists of pooled connections.")
+
+(defvar *pool-lock*
+  (bordeaux-threads:make-lock "connection-pool-lock")
+  "A lock to prevent multiple threads from messing with the connection
+pool at the same time.")
+
+(defmacro with-pool-lock (&body body)
+  "Aquire a lock for the pool when evaluating body \(if thread support
+is present)."
+  `(bordeaux-threads:with-lock-held (*pool-lock*) ,@body))
+
+(defun get-from-pool (&optional group)
+  "Get a database connection from the specified pool, returns nil if
+no connection was available."
+  (when (null group)
+    (setf group "default"))
+  (with-pool-lock
+    (pop (gethash group *connection-pools*))))
+
+(defun return-to-pool (connection &optional group)
+  "Return the database connection to the specified pool."
+  (when (null group)
+    (setf group "default"))
+  (macrolet ((the-pool ()
+         '(gethash group *connection-pools* ())))
+    (when (connection-open-p connection)
+      (with-pool-lock
+    (if (or (not *max-pool-size*) (< (length (the-pool)) *max-pool-size*))
+        (push connection (the-pool)))))
+    (values)))
+
+(defun clear-connection-pool ()
+  "Disconnect and remove all connections in the connection pool."
+  (with-pool-lock
+    (maphash
+     (lambda (group connections)
+       (declare (ignore group))
+       (dolist (conn connections)
+         (close-connection conn)))
+     *connection-pools*)
+    (setf *connection-pools* (make-hash-table :test 'equal))
+    (values)))
+
+(defun init-connection-pool (&key (host #(127 0 0 1)) (port 6379) auth (count *min-pool-size*))
+  "Initial connection pool."
+  (dotimes (index count t)
+    (let ((*connection* nil))
+        (connect :host host :port port :auth auth)
+        (return-to-pool *connection*))))
+
+(defmacro with-connection-in-pool (&body body)
+  "Evaluate BOTY with the connection pop from connection pool."
+  `(let ((*connection* (get-from-pool)))
+     (unwind-protect (progn ,@body)
+      (return-to-pool *connection*))))
+
 ;;; end
