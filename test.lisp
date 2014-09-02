@@ -1021,7 +1021,7 @@
     (should be string= "redis_version"
             (let ((info (red:info)))
               (if (char= #\# (char info 0))
-                  (sub info 9 22)
+                  (sub info 10 23)
                   (sub info 0 13))))
     (should be string= "OK"
             (red:slaveof "no" "one"))
