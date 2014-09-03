@@ -6,16 +6,31 @@
 
 ;; Utils.
 
-(defun format-redis-line (fmt &rest args)
-  "Write a CRLF-terminated string formatted according to the given control
-string FMT and its arguments ARGS to the stream of the current connection.
+(defun format-redis-number (char number)
+  "Write a prefix char and a number to the stream of the current connection.
 If *ECHOP-P* is not NIL, write that string to *ECHO-STREAM*, too."
-  (let ((str (apply #'fmt fmt args))
-        (out (conn-stream *connection*)))
-    (when *echo-p* (format *echo-stream* " > ~A~%" str))
-    (write-sequence (flex:string-to-octets str :external-format +utf8+) out)
-    (terpri out)))
+  (let* ((out (conn-stream *connection*))
+         (soc (flex:flexi-stream-stream out)))
+    (when *echo-p* (format *echo-stream* " > ~A~A~%" char number))
+    (write-byte (char-code char) soc)
+    (princ number out)
+    (write-byte 13 soc)
+    (write-byte 10 soc)))
 
+(defun format-redis-string (string)
+  "Write a string and CRLF-terminator to the stream of the current connection.
+If *ECHOP-P* is not NIL, write that string to *ECHO-STREAM*, too."
+  (let ((soc (flex:flexi-stream-stream (conn-stream *connection*))))
+    (when *echo-p* (format *echo-stream* " > ~A~%" string))
+    (write-sequence (babel:string-to-octets string :encoding :UTF-8) soc)
+    (write-byte 13 soc)
+    (write-byte 10 soc)))
+
+(defun ensure-string (obj)
+  (typecase obj
+    (string obj)
+    (symbol (string obj))
+    (t (princ-to-string obj))))
 
 ;;; Conditions
 
@@ -59,13 +74,13 @@ CMD is the command name (a string or a symbol), and ARGS are its arguments
   (force-output (conn-stream *connection*)))
 
 (defmethod tell (cmd &rest args)
-  (let ((all-args (cl:append (ppcre:split "-" (princ-to-string cmd))
+  (let ((all-args (cl:append (ppcre:split "-" (ensure-string cmd))
                              args)))
-    (format-redis-line "*~A" (length all-args))
+    (format-redis-number #\* (length all-args))
     (dolist (arg all-args)
-      (let ((arg (princ-to-string arg)))
-        (format-redis-line "$~A" (flex:octet-length arg :external-format +utf8+))
-        (format-redis-line "~A"  arg)))))
+      (let ((arg (ensure-string arg)))
+        (format-redis-number #\$ (babel:string-size-in-octets arg :encoding :UTF-8))
+        (format-redis-string arg)))))
 
 
 ;; Pipelining
@@ -160,7 +175,7 @@ server with the first character removed."
 (def-expect-method :integer
   (values (parse-integer reply)))
 
-(defmacro read-bulk-reply (&key post-processing (encoding +utf8+))
+(defmacro read-bulk-reply (&key post-processing (decode t))
   (with-gensyms (n bytes in str)
     `(let ((,n (parse-integer reply)))
        (unless (< ,n 0)
@@ -169,9 +184,8 @@ server with the first character removed."
            (read-sequence ,bytes ,in)
            (read-byte ,in)               ; #\Return
            (read-byte ,in)               ; #\Linefeed
-           ,(if encoding
-                `(let ((,str (flex:octets-to-string ,bytes
-                                                    :external-format ',encoding)))
+           ,(if decode
+                `(let ((,str (babel:octets-to-string ,bytes :encoding :UTF-8)))
                    (when *echo-p* (format *echo-stream* "<  ~A~%" ,str))
                    (unless (string= "nil" ,str)
                      (if ,post-processing
@@ -221,7 +235,7 @@ server with the first character removed."
                                       (parse-float x :type 'double-float))))
 
 (def-expect-method :bytes
-  (read-bulk-reply :encoding nil))
+  (read-bulk-reply :decode nil))
 
 
 ;;; Command definition

@@ -147,13 +147,13 @@ previously obtained using DUMP.")
 
 (defmethod tell ((cmd (eql 'RESTORE)) &rest args)
   (ds-bind (key ttl bytes) args
-    (format-redis-line "*~A" (1+ (length args)))
+    (format-redis-number #\* (1+ (length args)))
     (dolist (arg (list cmd key ttl))
-      (let ((arg (princ-to-string arg)))
-        (format-redis-line "$~A" (flex:octet-length arg :external-format +utf8+))
-        (format-redis-line "~A"  arg)))
+      (let ((arg (ensure-string arg)))
+        (format-redis-number #\$ (babel:string-size-in-octets arg :encoding :UTF-8))
+        (format-redis-string  arg)))
     (let ((out (conn-stream *connection*)))
-      (format-redis-line "$~A" (length bytes))
+      (format-redis-number #\$ (length bytes))
       (write-sequence bytes (flex:flexi-stream-stream out))
       (terpri out)
       (force-output out))))
@@ -495,7 +495,7 @@ The elements having the same score are returned in reverse lexicographical order
 Apart from the reversed ordering, ZREVRANGEBYSCORE is similar to ZRANGEBYSCORE.")
 
 (flet ((send-request (cmd key start end &key withscores limit)
-         (apply #'tell (princ-to-string cmd)
+         (apply #'tell (ensure-string cmd)
                 (cl:append (list key start end)
                            (when withscores '("WITHSCORES"))
                            (when limit
@@ -542,7 +542,7 @@ with optional WEIGHTS and AGGREGATE.")
            (assert (every #'numberp weights)))
          (when aggregate
            (assert (member aggregate '(:sum :min :max))))
-         (apply #'tell (princ-to-string cmd)
+         (apply #'tell (ensure-string cmd)
                 (cl:append (list dstkey n)
                            keys
                            (when weights (cons "WEIGHTS" weights))
