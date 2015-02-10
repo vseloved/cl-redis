@@ -100,7 +100,10 @@ index dbindex.")
     (apply #'tell "SORT"
            (cl:append (list key)
                       (when by    `("BY" ,by))
-                      (when get   `("GET" ,get))
+                      (when get   (etypecase get
+                                    (string `("GET" ,get))
+                                    (list (loop for item in get
+                                             collect "GET" collect item))))
                       (when desc  '("DESC"))
                       (when alpha '("ALPHA"))
                       (when start `("LIMIT" ,start ,end))
