@@ -53,13 +53,13 @@ already exist.")
 
 (def-cmd EXPIREAT (key timestamp) :boolean
   "Set a timeout on KEY. After the timeout has expired, the key will
-automatically be deleted.
-EXPIREAT has the same effect and semantic as EXPIRE, but instead of
-specifying the number of seconds representing the TTL, it takes
-an absolute UNIX timestamp (seconds since January 1, 1970).
-As in the case of EXPIRE command, if key is updated before the timeout has
-expired, then the timeout is removed as if the PERSIST command was invoked
-on KEY.")
+   automatically be deleted.
+   EXPIREAT has the same effect and semantic as EXPIRE, but instead of
+   specifying the number of seconds representing the TTL, it takes
+   an absolute UNIX timestamp (seconds since January 1, 1970).
+   As in the case of EXPIRE command, if key is updated before the timeout has
+   expired, then the timeout is removed as if the PERSIST command was invoked
+   on KEY.")
 
 (def-cmd PEXPIRE (key milliseconds) :boolean
   "Set a KEY's time to live in MILLISECONDS.")
@@ -78,7 +78,7 @@ on KEY.")
 
 (def-cmd MOVE (key dbindex) :boolean
   "Move the key from the currently selected DB to the DB having as
-index dbindex.")
+   index dbindex.")
 
 (def-cmd SORT (key &rest args
                    &key  by     ; A pattern.
@@ -88,9 +88,10 @@ index dbindex.")
                          desc   ; Should sort be descending?
                          alpha  ; Should sort be lexicographical?
                          store  ; Store result into key
-                         ) (if store
-                               :integer
-                               :multi)
+                         )
+  (if store
+      :integer
+      :multi)
   "Sort a Set or a List accordingly to the specified parameters.")
 
 (defmethod tell ((cmd (eql 'SORT)) &rest args)
@@ -108,42 +109,39 @@ index dbindex.")
 
 (def-cmd OBJECT-REFCOUNT (key) :integer
   "The OBJECT command allows to inspect the internals of Redis Objects
-associated with keys. It is useful for debugging or to understand if your keys
-are using the specially encoded data types to save space. Your application may
-also use the information reported by the OBJECT command to implement application
-level key eviction policies when using Redis as a Cache.
-
-OBJECT REFCOUNT <key> returns the number of references of the value associated
-with the specified key.")
+   associated with keys. It is useful for debugging or to understand if your keys
+   are using the specially encoded data types to save space. Your application may
+   also use the information reported by the OBJECT command to implement application
+   level key eviction policies when using Redis as a Cache.
+   OBJECT REFCOUNT <key> returns the number of references of the value associated
+   with the specified key.")
 
 (def-cmd OBJECT-ENCODING (key) :bulk
   "The OBJECT command allows to inspect the internals of Redis Objects
-associated with keys. It is useful for debugging or to understand if your keys
-are using the specially encoded data types to save space. Your application may
-also use the information reported by the OBJECT command to implement application
-level key eviction policies when using Redis as a Cache.
-
-OBJECT ENCODING <key> returns the kind of internal representation used in order
-to store the value associated with a key.")
+   associated with keys. It is useful for debugging or to understand if your keys
+   are using the specially encoded data types to save space. Your application may
+   also use the information reported by the OBJECT command to implement application
+   level key eviction policies when using Redis as a Cache.
+   OBJECT ENCODING <key> returns the kind of internal representation used in order
+   to store the value associated with a key.")
 
 (def-cmd OBJECT-IDLETIME (key) :integer
   "The OBJECT command allows to inspect the internals of Redis Objects
-associated with keys. It is useful for debugging or to understand if your keys
-are using the specially encoded data types to save space. Your application may
-also use the information reported by the OBJECT command to implement application
-level key eviction policies when using Redis as a Cache.
-
-OBJECT IDLETIME <key> returns the number of seconds since the object stored
-at the specified key is idle (not requested by read or write operations). While
-the value is returned in seconds the actual resolution of this timer is 10
-seconds, but may vary in future implementations.")
+   associated with keys. It is useful for debugging or to understand if your keys
+   are using the specially encoded data types to save space. Your application may
+   also use the information reported by the OBJECT command to implement application
+   level key eviction policies when using Redis as a Cache.
+   OBJECT IDLETIME <key> returns the number of seconds since the object stored
+   at the specified key is idle (not requested by read or write operations). While
+   the value is returned in seconds the actual resolution of this timer is 10
+   seconds, but may vary in future implementations.")
 
 (def-cmd DUMP (key) :bytes
   "Return a serialized version of the value stored at the specified KEY.")
 
 (def-cmd RESTORE (key ttl serialized-value) :status
   "Create a KEY using the provided SERIALIZED-VALUE,
-previously obtained using DUMP.")
+   previously obtained using DUMP.")
 
 (defmethod tell ((cmd (eql 'RESTORE)) &rest args)
   (ds-bind (key ttl bytes) args
@@ -158,9 +156,106 @@ previously obtained using DUMP.")
       (terpri out)
       (force-output out))))
 
-
 (def-cmd MIGRATE (host port key destination-db timeout) :status
   "Atomically transfer a key from a Redis instance to another one.")
+
+(def-cmd CLIENT-GETNAME () :bulk
+  "The CLIENT GETNAME returns the name of the current connection as set by
+   CLIENT SETNAME. Since every new connection starts without an associated name,
+   if no name was assigned a null bulk reply is returned.")
+
+(def-cmd CLIENT-SETNAME (connection-name) :status
+  "The CLIENT SETNAME command assigns a name to the current connection.
+   The assigned name is displayed in the output of CLIENT LIST so that
+   it is possible to identify the client that performed a given connection.")
+
+(def-cmd CLIENT-PAUSE (timeout) :status
+  "CLIENT PAUSE is a connections control command able to suspend all the Redis
+   clients for the specified amount of time (in milliseconds).")
+
+(def-cmd CLUSTER-SLOTS () :multi
+  "CLUSTER SLOTS returns details about which cluster slots map to which Redis
+   instances.")
+
+(def-cmd ROLE () :bulk
+  "Provide information on the role of a Redis instance in the context
+   of replication, by returning if the instance is currently a master, slave,
+   or sentinel. The command also returns additional information about the state
+   of the replication (if the role is master or slave) or the list of monitored
+   master names (if the role is sentinel).")
+
+(def-cmd COMMAND () :multi
+  "Returns Array reply of details about all Redis commands.
+   Cluster clients must be aware of key positions in commands so commands can go
+   to matching instances, but Redis commands vary between accepting one key,
+   multiple keys, or even multiple keys separated by other data.
+   You can use COMMAND to cache a mapping between commands and key positions
+   for each command to enable exact routing of commands to cluster instances.")
+
+(def-cmd COMMAND-COUNT () :integer
+  "Returns Integer reply of number of total commands in this Redis server.")
+
+(def-cmd COMMAND-GETKEYS (command-name &rest args) :multi
+  "Returns Array reply of keys from a full Redis command.
+   COMMAND GETKEYS is a helper command to let you find the keys from
+   a full Redis command.
+   COMMAND shows some commands as having movablekeys meaning the entire command
+   must be parsed to discover storage or retrieval keys.
+   You can use COMMAND GETKEYS to discover key positions directly from how Redis
+   parses the commands.")
+
+(def-cmd COMMAND-INFO (command-name &rest args) :multi
+  "Returns Array reply of details about multiple Redis commands.
+   Same result format as COMMAND except you can specify which commands get
+   returned.
+   If you request details about non-existing commands, their return position
+   will be nil.")
+
+(def-cmd TIME () :multi
+  "The TIME command returns the current server time as a two items lists:
+   a Unix timestamp and the amount of microseconds already elapsed
+   in the current second.
+   Basically the interface is very similar to the one of the
+   gettimeofday system call.")
+
+
+;;; Scan commands
+
+(def-cmd SCAN (cursor &rest args &key match count) :multi
+  "The SCAN command and the closely related commands SSCAN, HSCAN and ZSCAN
+   are used in order to incrementally iterate over a collection of elements.
+   SCAN iterates the set of keys in the currently selected Redis database.")
+
+(def-cmd SSCAN (cursor &rest args &key match count) :multi
+  "The SCAN command and the closely related commands SCAN, HSCAN and ZSCAN
+   are used in order to incrementally iterate over a collection of elements.
+   SSCAN iterates elements of Sets types.")
+
+(def-cmd HSCAN (cursor &rest args &key match count) :multi
+  "The ZSCAN command and the closely related commands SCAN, SSCAN and ZSCAN
+   are used in order to incrementally iterate over a collection of elements.
+   HSCAN iterates fields of Hash types and their associated values.")
+
+(def-cmd ZSCAN (cursor &rest args &key match count) :multi
+  "The SSCAN command and the closely related commands SCAN, SSCAN and HSCAN
+   are used in order to incrementally iterate over a collection of elements.
+   ZSCAN iterates elements of Sorted Set types and their associated scores.")
+
+(flet ((tell-scan (cmd args)
+         (ds-bind (key &key match count) args
+           (apply #'tell cmd
+                  (cl:append (list key)
+                             (when match `("MATCH" ,match))
+                             (when count `("COUNT" ,count)))))))
+
+  (defmethod tell ((cmd (eql 'SCAN)) &rest args)
+    (tell-scan "SCAN" args))
+  (defmethod tell ((cmd (eql 'SSCAN)) &rest args)
+    (tell-scan "SSCAN" args))
+  (defmethod tell ((cmd (eql 'HSCAN)) &rest args)
+    (tell-scan "HSCAN" args))
+  (defmethod tell ((cmd (eql 'ZSCAN)) &rest args)
+    (tell-scan "ZSCAN" args)))
 
 
 ;;; String commands
@@ -240,6 +335,9 @@ Warning: left for backwards compatibility. It is now called: GETRANGE.")
   "Perform bitwise OPERATION between strings ar KEY and KEYS
 and store the result ad DSTKEY.")
 
+(def-cmd BITPOS (key bit &optional start end) :integer
+  "Return the position of the first bit set to 1 or 0 in a string.")
+
 (def-cmd SETRANGE (key offset value) :integer
   "Overwrites part of the string stored at KEY, starting at the specified
 OFFSET, for the entire length of VALUE. If the OFFSET is larger than the
@@ -297,6 +395,12 @@ stored at KEY.")
 
 (def-cmd HGETALL (key) :multi
   "Return all the fields and associated values in a hash.")
+
+#+v.3.2.0
+(def-cmd HSTRLEN (key field) :integer
+  "Returns the string length of the value associated with field
+   in the hash stored at key.
+   If the key or the field do not exist, 0 is returned.")
 
 
 ;;; List commands
@@ -381,10 +485,10 @@ Note: before/after can only have 2 values: :before or :after.")
 
 ;;; Set commands
 
-(def-cmd SADD (key member) :boolean
+(def-cmd SADD (key &rest members) :integer
   "Add the specified member to the Set value at key.")
 
-(def-cmd SREM (key member) :boolean
+(def-cmd SREM (key &rest members) :integer
   "Remove the specified member from the Set value at key.")
 
 (def-cmd SPOP (key) :bulk
@@ -401,69 +505,69 @@ Note: before/after can only have 2 values: :before or :after.")
 
 (def-cmd SINTER (&rest keys) :multi
   "Return the intersection between the Sets stored at key1, key2, ...,
-keyN.")
+   keyN.")
 
 (def-cmd SINTERSTORE (dstkey &rest keys) :integer
-  "Compute the intersection between the Sets stored at key1, key2,
-..., keyN, and store the resulting Set at dstkey.")
+  "Compute the intersection between the Sets stored at key1, key2, ...,
+   keyN, and store the resulting Set at dstkey.")
 
 (def-cmd SUNION (&rest keys) :multi
   "Return the union between the Sets stored at key1, key2, ..., keyN.")
 
 (def-cmd SUNIONSTORE (dstkey &rest keys) :integer
   "Compute the union between the Sets stored at key1, key2, ..., keyN,
-and store the resulting Set at dstkey.")
+   and store the resulting Set at dstkey.")
 
 (def-cmd SDIFF (&rest keys) :multi
   "Return the difference between the Set stored at key1 and all the
-Sets key2, ..., keyN.")
+   Sets key2, ..., keyN.")
 
 (def-cmd SDIFFSTORE (dstkey &rest keys) :integer
-  "Compute the difference between the Set key1 and all the Sets key2,
-..., keyN, and store the resulting Set at dstkey.")
+  "Compute the difference between the Set key1 and all the Sets key2, ...,
+   keyN, and store the resulting Set at dstkey.")
 
 (def-cmd SMEMBERS (key) :multi
   "Return all the members of the Set value at key.")
 
 (def-cmd SRANDMEMBER (key &optional count) :anything
   "Get one or COUNT random members from a set at KEY.
-When called with the additional count argument,
-return an array of count distinct elements if count is positive.
-If called with a negative count the behavior changes and the command
-is allowed to return the same element multiple times.
-In this case the numer of returned elements is the absolute
-value of the specified count.")
+   When called with the additional count argument,
+   return an array of count distinct elements if count is positive.
+   If called with a negative count the behavior changes and the command
+   is allowed to return the same element multiple times.
+   In this case the numer of returned elements is the absolute
+   value of the specified count.")
 
 
 ;;; Sorted set (zset) commands
 
-(def-cmd ZADD (key score member) :boolean
+(def-cmd ZADD (key &rest score-member-pairs) :integer
   "Add the specified MEMBER to the Set value at KEY or update the
-SCORE if it already exist.  If nil is returned, the element already
-existed in the set.  Just the score was updated.")
+   SCORE if it already exist.  If nil is returned, the element already
+   existed in the set.  Just the score was updated.")
 
-(def-cmd ZREM (key member) :boolean
+(def-cmd ZREM (key &rest members) :integer
   "Remove the specified MEMBER from the Set value at KEY.")
 
 (def-cmd ZINCRBY (key increment member) :integer
   "If the MEMBER already exists increment its score by INCREMENT,
-otherwise add the member setting INCREMENT as score.")
+   otherwise add the member setting INCREMENT as score.")
 
 (def-cmd ZRANK (key member) :integer
   "Return the rank (or index) or MEMBER in the sorted set at KEY,
-with scores being ordered from low to high.")
+   with scores being ordered from low to high.")
 
 (def-cmd ZREVRANK (key member) :integer
   "Return the rank (or index) or MEMBER in the sorted set at KEY,
-with scores being ordered from high to low.")
+   with scores being ordered from high to low.")
 
 (def-cmd ZRANGE (key start end &optional withscores) :multi
   "Return a range of elements from the sorted set at KEY.")
 
 (def-cmd ZREVRANGE (key start end &optional withscores) :multi
   "Return a range of elements from the sorted set at KEY, exactly like
-ZRANGE, but the sorted set is ordered in traversed in reverse order,
-from the greatest to the smallest score.")
+   ZRANGE, but the sorted set is ordered in traversed in reverse order,
+   from the greatest to the smallest score.")
 
 (macrolet ((proper-withscores ()
              `(when (and (= 4 (length args))
@@ -476,25 +580,32 @@ from the greatest to the smallest score.")
 
 (def-cmd ZRANGEBYSCORE (key min max &rest args &key withscores limit) :multi
   "Returns all the elements in the sorted set at KEY with a score between
-MIN and MAX (including elements with score equal to MIN or MAX).
-The elements are considered to be ordered from low to high scores.
-The elements having the same score are returned in lexicographical order (this
-follows from a property of the sorted set implementation in Redis and does not
-involve further computation).
-The optional LIMIT argument can be used to only get a range of the matching
-elements (similar to SELECT LIMIT offset, count in SQL).
-The optional WITHSCORES argument makes the command return both the element and
-its score, instead of the element alone.")
+   MIN and MAX (including elements with score equal to MIN or MAX).
+   The elements are considered to be ordered from low to high scores.
+   The elements having the same score are returned in lexicographical order
+   (this follows from a property of the sorted set implementation in Redis and
+   does not involve further computation).
+   The optional LIMIT argument can be used to only get a range of the matching
+   elements (similar to SELECT LIMIT offset, count in SQL).
+   The optional WITHSCORES argument makes the command return both the element and
+   its score, instead of the element alone.")
 
 (def-cmd ZREVRANGEBYSCORE (key max min &rest args &key withscores limit) :multi
   "Returns all the elements in the sorted set at KEY with a score between
-MAX and MIN (including elements with score equal to MAX or MIN).
-In contrary to the default ordering of sorted sets, for this command the
-elements are considered to be ordered from high to low scores.
-The elements having the same score are returned in reverse lexicographical order.
-Apart from the reversed ordering, ZREVRANGEBYSCORE is similar to ZRANGEBYSCORE.")
+   MAX and MIN (including elements with score equal to MAX or MIN).
+   In contrary to the default ordering of sorted sets, for this command the
+   elements are considered to be ordered from high to low scores.
+   The elements having the same score are returned in reverse lexicographical
+   order. Apart from the reversed ordering,
+   ZREVRANGEBYSCORE is similar to ZRANGEBYSCORE.")
 
-(flet ((send-request (cmd key start end &key withscores limit)
+(def-cmd ZREVRANGEBYLEX (key max min &rest args &key withscores limit) :multi
+  "When all the elements in a sorted set are inserted with the same score,
+   in order to force lexicographical ordering, this command returns
+   all the elements in the sorted set at key with a value between max and min.
+   Apart from the reversed ordering, ZREVRANGEBYLEX is similar to ZRANGEBYLEX.")
+
+(flet ((tell-zrevrange (cmd key start end &key withscores limit)
          (apply #'tell (princ-to-string cmd)
                 (cl:append (list key start end)
                            (when withscores '("WITHSCORES"))
@@ -503,38 +614,56 @@ Apart from the reversed ordering, ZREVRANGEBYSCORE is similar to ZRANGEBYSCORE."
                                           (atom (cdr limit))))
                              (list "LIMIT" (car limit) (cdr limit)))))))
   (defmethod tell ((cmd (eql 'ZRANGEBYSCORE)) &rest args)
-    (apply #'send-request cmd args))
+    (apply #'tell-zrevrange cmd args))
   (defmethod tell ((cmd (eql 'ZREVRANGEBYSCORE)) &rest args)
-    (apply #'send-request cmd args)))
+    (apply #'tell-zrevrange cmd args))
+  (defmethod tell ((cmd (eql 'ZREVRANGEBYLEX)) &rest args)
+    (apply #'tell-zrevrange cmd args)))
 
 (def-cmd ZCARD (key) :integer
   "Return the cardinality (number of elements) of the sorted set at KEY.")
 
 (def-cmd ZCOUNT (key min max) :integer
   "Returns the number of elements in the sorted set at KEY with a score between
-MIN and MAX.")
+   MIN and MAX.")
+
+(def-cmd ZLEXCOUNT (key min max) :integer
+  "When all the elements in a sorted set are inserted with the same score,
+   in order to force lexicographical ordering,
+   this command returns the number of elements in the sorted set at key
+   with a value between min and max.
+   The min and max arguments have the same meaning as described for ZRANGEBYLEX.")
 
 (def-cmd ZSCORE (key element) :float
   "Return the score associated with the specified ELEMENT of the
-sorted set at KEY.")
+   sorted set at KEY.")
 
 (def-cmd ZREMRANGEBYRANK (key min max) :integer
   "Remove all the elements with rank >= MIN and rank <= MAX from the
-sorted set.")
+   sorted set.")
 
 (def-cmd ZREMRANGEBYSCORE (key min max) :integer
   "Remove all the elements with score >= MIN and score <= MAX from the
-sorted set.")
+   sorted set.")
+
+(def-cmd ZREMRANGEBYLEX (key min max) :integer
+  "When all the elements in a sorted set are inserted with the same score,
+   in order to force lexicographical ordering, this command removes all elements
+   in the sorted set stored at KEY between the lexicographical range
+   specified by MIN and MAX.
+   The meaning of MIN and MAX are the same of the ZRANGEBYLEX command.
+   Similarly, this command actually returns the same elements that ZRANGEBYLEX
+   would return if called with the same min and max arguments.")
 
 (def-cmd ZUNIONSTORE (dstkey n keys &rest args &key weights aggregate) :integer
   "Perform a union in DSTKEY over a number (N) of sorted sets at KEYS
-with optional WEIGHTS and AGGREGATE.")
+   with optional WEIGHTS and AGGREGATE.")
 
 (def-cmd ZINTERSTORE (dstkey n keys &rest args &key weights aggregate) :integer
   "Perform an intersection in DSTKEY over a number (N) of sorted sets at KEYS
-with optional WEIGHTS and AGGREGATE.")
+   with optional WEIGHTS and AGGREGATE.")
 
-(flet ((send-request (cmd dstkey n keys &key weights aggregate)
+(flet ((tell-zstore (cmd dstkey n keys &key weights aggregate)
          (assert (integerp n))
          (assert (= n (length keys)))
          (when weights
@@ -548,10 +677,56 @@ with optional WEIGHTS and AGGREGATE.")
                            (when weights (cons "WEIGHTS" weights))
                            (when aggregate (list "AGGREGATE" aggregate))))))
   (defmethod tell ((cmd (eql 'ZUNIONSTORE)) &rest args)
-    (apply #'send-request cmd args))
+    (apply #'tell-zstore cmd args))
   (defmethod tell ((cmd (eql 'ZINTERSTORE)) &rest args)
-    (apply #'send-request cmd args)))
+    (apply #'tell-zstore cmd args)))
 
+
+;;; HyperLogLog commands
+
+(def-cmd PFADD (key element &rest elements) :integer
+  "Adds all the element arguments to the HyperLogLog data structure stored
+   at the variable name specified as first argument.
+   As a side effect of this command the HyperLogLog internals may be updated
+   to reflect a different estimation of the number of unique items added so far
+   (the cardinality of the set).
+   If the approximated cardinality estimated by the HyperLogLog changed after
+   executing the command, PFADD returns 1, otherwise 0 is returned.
+   The command automatically creates an empty HyperLogLog structure (that is,
+   a Redis String of a specified length and with a given encoding) if
+   the specified key does not exist.
+   To call the command without elements but just the variable name is valid,
+   this will result into no operation performed if the variable already exists,
+   or just the creation of the data structure if the key does not exist
+   (in the latter case 1 is returned).")
+
+(def-cmd PFCOUNT (key &rest keys) :integer
+  "When called with a single key, returns the approximated cardinality computed
+   by the HyperLogLog data structure stored at the specified variable,
+   which is 0 if the variable does not exist.
+   When called with multiple keys, returns the approximated cardinality of
+   the union of the HyperLogLogs passed, by internally merging the HyperLogLogs
+   stored at the provided keys into a temporary hyperLogLog.
+   The HyperLogLog data structure can be used in order to count unique elements
+   in a set using just a small constant amount of memory, specifically 12k bytes
+   for every HyperLogLog (plus a few bytes for the key itself).
+   The returned cardinality of the observed set is not exact, but approximated
+   with a standard error of 0.81%.
+   For example, in order to take the count of all the unique search queries
+   performed in a day, a program needs to call PFADD every time a query is
+   processed. The estimated number of unique queries can be retrieved with
+   PFCOUNT at any time.
+   Note: as a side effect of calling this function, it is possible that
+   the HyperLogLog is modified, since the last 8 bytes encode the latest
+   computed cardinality for caching purposes. So PFCOUNT is technically
+   a write command.")
+
+(def-cmd PFMERGE (destkey sourcekey &rest sourcekeys) :status
+  "Merge multiple HyperLogLog values into an unique value that will approximate
+   the cardinality of the union of the observed Sets of the source HyperLogLog
+   structures.
+   The computed merged HyperLogLog is set to the destination variable,
+   which is created if does not exist (defaulting to an empty HyperLogLog).")
 
 ;;; Transaction commands
 
@@ -569,7 +744,7 @@ with optional WEIGHTS and AGGREGATE.")
 
 (def-cmd UNWATCH () :status
   "Flushes all the previously watched keys for a transaction.
-If you call EXEC or DISCARD, there's no need to manually call UNWATCH.")
+   If you call EXEC or DISCARD, there's no need to manually call UNWATCH.")
 
 
 ;;; Publish/Subscribe
@@ -600,7 +775,7 @@ If you call EXEC or DISCARD, there's no need to manually call UNWATCH.")
 
 (def-cmd LASTSAVE () :integer
   "Return the UNIX time stamp of the last successfully saving of the
-dataset on disk.")
+   dataset on disk.")
 
 (def-cmd SHUTDOWN () :end
   "Synchronously save the DB on disk, then shutdown the server.")
@@ -621,13 +796,13 @@ dataset on disk.")
   "Configure a Redis server at runtime: set PARAMETER VALUE.")
 
 (def-cmd CONFIG-RESETSTAT () :status
-  "Resets the statistics reported by Redis using the INFO command.
-These are the counters that are reset:
-Keyspace hits
-Keyspace misses
-Number of commands processed
-Number of connections received
-Number of expired keys")
+  "Resets the statistics reported by Redis using the INFO command.")
+
+(def-cmd CONFIG-REWRITE () :status
+  "The CONFIG REWRITE command rewrites the redis.conf file the server
+   was started with, applying the minimal changes needed to make it reflecting
+   the configuration currently used by the server, that may be different
+   compared to the original one because of the use of the CONFIG SET command.")
 
 (def-cmd FLUSHDB () :status
   "Remove all the keys of the currently selected DB.")

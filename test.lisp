@@ -480,7 +480,24 @@
     (should be = 16
             (red-strlen "mykey"))
     (should be zerop
-            (red-strlen "nonex key"))))
+            (red-strlen "nonex key"))
+    (should be string= "OK"
+            (red:set "mykey" (apply #'fmt "~C~C~C"
+                                    (mapcar #'code-char '(#xf0 #xff #x00)))))
+    (should be = 2
+            (red:bitpos "mykey" 0))
+    (should be string= "OK"
+            (red:set "mykey" (apply #'fmt "~C~C~C"
+                                    (mapcar #'code-char '(#x00 #xff #xf0)))))
+    (should be = 8
+            (red:bitpos "mykey" 1 0))
+    (should be = 16
+            (red:bitpos "mykey" 1 2))
+    (should be string= "OK"
+            (red:set "mykey" (apply #'fmt "~C~C~C"
+                                    (mapcar #'code-char '(#x00 #x00 #x00)))))
+    (should be = -1
+            (red:bitpos "mykey" 1))))
 
 (deftest l-commands ()
   (with-test-db
@@ -659,17 +676,17 @@
 
 (deftest s-commands ()
   (with-test-db
-    (should be true
+    (should be = 1
             (red-sadd "s" "1"))
-    (should be true
+    (should be = 1
             (red-sadd "э" "1"))
-    (should be null
+    (should be = 0
             (red-sadd "s" "1"))
-    (should be null
+    (should be = 0
             (red-sadd "э" "1"))
-    (should be true
+    (should be = 1
             (red-sadd "s" "2"))
-    (should be true
+    (should be = 1
             (red-sadd "э" "2"))
     (should be find-s '("2" "1")
             (red-srandmember "s"))
@@ -802,9 +819,9 @@
     (should be true
             (red-zrem "множина"
                       "елемент2"))
-    (should be null
+    (should be zerop
             (red-zrem "set" "e2"))
-    (should be null
+    (should be zerop
             (red-zrem "множина"
                       "елемент2"))
     (should be true
@@ -868,6 +885,25 @@
     (should be equal '("елемент5"
                        "елемент2")
             (red-zrange "множина" 0 -1))
+    (should be = 7
+            (red:zadd "myzset" 0 "a" 0 "b" 0 "c" 0 "d" 0 "e" 0 "f" 0 "g"))
+    (should be equal '("c" "b" "a")
+            (red:zrevrangebylex "myzset" "[c" "-"))
+    (should be equal '("b" "a")
+            (red:zrevrangebylex "myzset" "(c" "-"))
+    (should be equal '("f" "e" "d" "c" "b")
+            (red:zrevrangebylex "myzset" "(g" "[aaa"))
+    (should be = 1
+            (red:zadd "myzset" 0 "aaaa" 0 "b" 0 "c" 0 "d" 0 "e"))
+    (should be = 5
+            (red:zadd "myzset" 0 "foo" 0 "zap" 0 "zip" 0 "ALPHA" 0 "alpha"))
+    (should be equal '("ALPHA" "a" "aaaa" "alpha" "b" "c" "d" "e" "f" "foo" "g"
+                       "zap" "zip")
+            (red:zrange "myzset" 0 -1))
+    (should be = 8
+            (red:zremrangebylex "myzset" "[alpha" "[omega"))
+    (should be equal '("ALPHA" "a" "aaaa" "zap" "zip")
+            (red:zrange "myzset" 0 -1))
     (should be = 4
             (red-zunionstore
              "s1" 2 '("set" "множина")))
@@ -883,10 +919,18 @@
             (red-zadd "myzset" 1 "two"))
     (should be true
             (red-zadd "myzset" 1 "three"))
-    (should be = 3
+    (should be = 8
             (red-zcount "myzset" "-inf" "+inf"))
     (should be zerop
             (red-zcount "myzset" "(1" "3"))
+    (should be = 4
+            (red:zadd "myzset" 0 "a" 0 "b" 0 "c" 0 "d" 0 "e"))
+    (should be = 2
+            (red:zadd "myzset" 0 "f" 0 "g"))
+    (should be = 14
+            (red:zlexcount "myzset" "-" "+"))
+    (should be = 5
+            (red:zlexcount "myzset" "[b" "[f"))
     (should be = 1
             (red-zincrby "myzset" 3 "two"))))
 
@@ -931,7 +975,25 @@
     (should be null
             (red-hsetnx "myhash" "field" "World"))
     (should be string= "Hello"
-            (red-hget "myhash" "field"))))
+            (red-hget "myhash" "field"))
+    #+v.3.2.0
+    (should be = 5
+            (red-hstrlen "myhash" "field"))))
+
+(deftest pf-commands ()
+  (with-test-db
+    (should be = 1
+            (red:pfadd "hll" "a" "b" "c" "d" "e" "f" "g"))
+    (should be = 7
+            (red:pfcount "hll"))
+    (should be = 1
+            (red:pfadd "hll1" "foo" "bar" "zap" "a"))
+    (should be = 1
+            (red:pfadd "hll2" "a" "b" "c" "foo"))
+    (should be string= "OK"
+            (red:pfmerge "hll3" "hll1" "hll2"))
+    (should be = 6
+            (red:pfcount "hll3"))))
 
 (deftest transaction-commands ()
   (with-test-db
@@ -1028,6 +1090,13 @@
     (should be string= "save"
             (first (red:config-get "save")))
     (should be string= "OK"
+            (handler-case (red:config-rewrite)
+              (redis-error (e)
+                (if (string= "ERR The server is running without a config file"
+                             (redis-error-message e))
+                    "OK"
+                    (error e)))))
+    (should be string= "OK"
             (red:config-set "timeout" 200))
     (should be string= "OK"
             (red:config-resetstat))
@@ -1038,10 +1107,20 @@
             (red:slowlog :len))
     (should be true
             (red:slowlog :reset))
+    (should be plusp
+            (reduce '+ (mapcar 'parse-integer (red:time))))
+    (should be string= "OK"
+            (red:client-setname "test"))
+    (should be string= "test"
+            (red:client-getname))
+    (should be string= "OK"
+            (red:client-pause 1))
     ;; SYNC, BGREWRITEAOF - may be too long
     ;; SHUTDOWN - futile
     ;; FLUSHALL - don't do this at home
     ;; MIGRATE - don't have other host
+    ;; CLUSRE-SLOTS - need cluster
+    ;; COMMAND, COMMAND-COUNT, COMMAND-GETKEYS, COMMAND-INFO - ???
     ))
 
 

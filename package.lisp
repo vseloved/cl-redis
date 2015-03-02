@@ -7,7 +7,7 @@
 (defpackage #:redis
   (:use #:common-lisp #:rutil)
   (:shadow #:quit #:sort #:set #:get #:substr #:eval #:type #:append
-           #:watch #:unwatch #:shutdown)
+           #:watch #:unwatch #:shutdown #:time)
   (:export #:redis-connection
            #:connect
            #:disconnect
@@ -31,6 +31,7 @@
            #:tell
 
            #:redis-error
+           #:redis-error-message
            #:redis-bad-reply
            #:redis-error-reply
            #:redis-connection-error
