@@ -9,7 +9,7 @@
 2. `(ql:quickload 'cl-redis)`
 3. Connect to the server to the given host and port with
    `(redis:connect :host <host> :port <port>)`
-   (`host` defaults to `127.0.0.1`, `port` — to `6739`).
+   (`host` defaults to `127.0.0.1`, `port` — to `6379`).
 4. Interact with the server using Redis commands from the `red` package.
 
         CL-USER> (red:ping)
