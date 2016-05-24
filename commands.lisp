@@ -786,7 +786,7 @@ Note: before/after can only have 2 values: :before or :after.")
 (def-cmd BGREWRITEAOF () :status
   "Rewrite the append only file in background when it gets too big.")
 
-(def-cmd INFO () :bulk
+(def-cmd INFO (&optional section) :bulk
   "Provide information and statistics about the server.")
 
 (def-cmd SLAVEOF (hostname port) :status
