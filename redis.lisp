@@ -30,7 +30,7 @@ If *ECHOP-P* is not NIL, write that string to *ECHO-STREAM*, too."
   (typecase obj
     (string obj)
     (symbol (string obj))
-    (t (princ-to-string obj))))
+    (t (prin1-to-string obj))))
 
 ;;; Conditions
 
