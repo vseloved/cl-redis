@@ -229,21 +229,6 @@ already exist.")
    are used in order to incrementally iterate over a collection of elements.
    SCAN iterates the set of keys in the currently selected Redis database.")
 
-(def-cmd SSCAN (cursor &rest args &key match count) :multi
-  "The SCAN command and the closely related commands SCAN, HSCAN and ZSCAN
-   are used in order to incrementally iterate over a collection of elements.
-   SSCAN iterates elements of Sets types.")
-
-(def-cmd HSCAN (cursor &rest args &key match count) :multi
-  "The ZSCAN command and the closely related commands SCAN, SSCAN and ZSCAN
-   are used in order to incrementally iterate over a collection of elements.
-   HSCAN iterates fields of Hash types and their associated values.")
-
-(def-cmd ZSCAN (cursor &rest args &key match count) :multi
-  "The SSCAN command and the closely related commands SCAN, SSCAN and HSCAN
-   are used in order to incrementally iterate over a collection of elements.
-   ZSCAN iterates elements of Sorted Set types and their associated scores.")
-
 (flet ((tell-scan (cmd args)
          (ds-bind (key &key match count) args
            (apply #'tell cmd
@@ -252,7 +237,29 @@ already exist.")
                              (when count `("COUNT" ,count)))))))
 
   (defmethod tell ((cmd (eql 'SCAN)) &rest args)
-    (tell-scan "SCAN" args))
+    (tell-scan "SCAN" args)))
+
+(def-cmd SSCAN (key cursor &rest args &key match count) :multi
+  "The SCAN command and the closely related commands SCAN, HSCAN and ZSCAN
+   are used in order to incrementally iterate over a collection of elements.
+   SSCAN iterates elements of Sets types.")
+
+(def-cmd HSCAN (key cursor &rest args &key match count) :multi
+  "The HSCAN command and the closely related commands SCAN, SSCAN and ZSCAN
+   are used in order to incrementally iterate over a collection of elements.
+   HSCAN iterates fields of Hash types and their associated values.")
+
+(def-cmd ZSCAN (key cursor &rest args &key match count) :multi
+  "The ZSCAN command and the closely related commands SCAN, SSCAN and HSCAN
+   are used in order to incrementally iterate over a collection of elements.
+   ZSCAN iterates elements of Sorted Set types and their associated scores.")
+
+(flet ((tell-scan (cmd args)
+         (ds-bind (key cursor &key match count) args
+           (apply #'tell cmd
+                  (cl:append (list key cursor)
+                             (when match `("MATCH" ,match))
+                             (when count `("COUNT" ,count)))))))
   (defmethod tell ((cmd (eql 'SSCAN)) &rest args)
     (tell-scan "SSCAN" args))
   (defmethod tell ((cmd (eql 'HSCAN)) &rest args)
