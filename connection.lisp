@@ -47,6 +47,10 @@ for debugging purposes.  The default is *STANDARD-OUTPUT*.")
 (defmethod initialize-instance :after ((conn redis-connection) &key)
   (open-connection conn))
 
+(defmethod conn-stream ((object null))
+  (error 'redis-connection-error
+	 :error "No connection to Redis server was not established."))
+
 (defun connection-open-p (conn)
   "Is the socket of CONNECTION open?"
   (and-it (conn-stream conn)
