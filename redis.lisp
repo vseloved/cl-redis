@@ -109,14 +109,28 @@ expected results."
 
 ;;; Receiving replies
 
-(defgeneric expect (type)
-  (:documentation "Receive and process the reply of the given type from Redis server."))
+(defgeneric expect (type &key timeout)
+  (:documentation "Receive and process the reply of the given type from Redis server.
 
-(defmethod expect :around (type)
+If specified, TIMEOUT is the number of seconds to wait for a reply before
+returning.
+
+Returns two values, the first is the reply or NIL. The second is a real number
+indicating the time remaining in the timeout or NIL if the read timed out/there
+was no timeout."))
+
+(defmethod expect :around (type &key timeout)
   (if *pipelined*
       (progn (push type *pipeline*)
              :pipelined)
-      (call-next-method)))
+      ;; Wait for the socket to be ready, up to TIMEOUT seconds
+      (let (remaining-timeout)
+        (if (or (null timeout)
+                (setq remaining-timeout
+                      (nth-value 1 (usocket:wait-for-input (conn-socket *connection*)
+                                                           :timeout timeout))))
+            (call-next-method)
+            (values nil remaining-timeout)))))
 
 (eval-always
 
@@ -131,7 +145,7 @@ expected results."
 variable REPLY, which is bound to the reply received from Redis ~
 server with the first character removed."
   (with-unique-names (line char)
-    `(defmethod expect ((type (eql ,type)))
+    `(defmethod expect ((type (eql ,type)) &key &allow-other-keys)
        ,(fmt "Receive and process the reply of type ~A." type)
        (with-redis-in (,line ,char)
          (let ((reply (subseq ,line 1)))
@@ -145,7 +159,7 @@ server with the first character removed."
                                        ,char))))))))))
 ) ; end of eval-always
 
-(defmethod expect ((type (eql :anything)))
+(defmethod expect ((type (eql :anything)) &key &allow-other-keys)
   "Receive and process status reply, which is just a string, preceeded with +."
   (case (peek-char nil (conn-stream *connection*))
     (#\+ (expect :status))
@@ -154,7 +168,7 @@ server with the first character removed."
     (#\* (expect :multi))
     (otherwise (expect :status))))  ; will do error-signalling
 
-(defmethod expect ((type (eql :status)))
+(defmethod expect ((type (eql :status)) &key &allow-other-keys)
   "Receive and process status reply, which is just a string, preceeded with +."
   (with-redis-in (line char)
     (case char
@@ -211,7 +225,7 @@ server with the first character removed."
       (loop :repeat n
          :collect (expect :anything)))))
 
-(defmethod expect ((type (eql :pubsub)))
+(defmethod expect ((type (eql :pubsub)) &key &allow-other-keys)
   (let ((in (conn-stream *connection*)))
     (loop :collect (with-redis-in (line char)
                      (list (expect :bulk)
@@ -221,11 +235,11 @@ server with the first character removed."
              (if next-char (unread-char next-char in)
                  (loop-finish))))))
 
-(defmethod expect ((type (eql :end)))
+(defmethod expect ((type (eql :end)) &key &allow-other-keys)
   ;; Used for commands QUIT and SHUTDOWN (does nothing)
   )
 
-(defmethod expect ((type (eql :list)))
+(defmethod expect ((type (eql :list)) &key &allow-other-keys)
   ;; Used to make Redis KEYS command return a list of strings (keys)
   ;; rather than a single string
   (cl-ppcre:split " " (expect :bulk)))
