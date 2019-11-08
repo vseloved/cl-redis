@@ -7,7 +7,7 @@
 (defpackage #:redis
   (:use #:common-lisp #:rutil)
   (:shadow #:quit #:sort #:set #:get #:substr #:eval #:type #:append
-           #:watch #:unwatch #:shutdown #:time)
+           #:watch #:unwatch #:shutdown #:time #:keys)
   (:export #:redis-connection
            #:connect
            #:disconnect
