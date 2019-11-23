@@ -415,10 +415,10 @@ stored at KEY.")
 
 ;;; List commands
 
-(def-cmd RPUSH (key value) :integer
+(def-cmd RPUSH (key &rest values) :integer
   "Append an element to the tail of the list value at KEY.")
 
-(def-cmd LPUSH (key value) :integer
+(def-cmd LPUSH (key &rest values) :integer
   "Append an element to the head of the list value at KEY.")
 
 (def-cmd RPUSHX (key value) :integer
