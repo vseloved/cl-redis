@@ -1041,6 +1041,8 @@
                                        (with-connection ()
                                          (red-publish "foo" "test")))))
                    (expect :multi)))
+    (should be equal '(nil nil)
+            (multiple-value-list (expect :multi :timeout 2)))
     (should be equal '(("unsubscribe" "bar" "1"))
             (red-unsubscribe "bar"))
     (should be equal '(("unsubscribe" "foo" "0"))
