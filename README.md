@@ -110,7 +110,7 @@ To support that there's `with-pipelining` macro.
 Compare execution times in the following examples
 (with pipelining and without: 6.567 secs vs. 2023.924 secs!):
 
-```
+```lisp
 (let ((names (let (acc)
                (dotimes (i 1000 (nreverse acc))
                  (push (format nil "n~a" i) acc))))
