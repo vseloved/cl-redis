@@ -12,8 +12,10 @@
    (`host` defaults to `127.0.0.1`, `port` — to `6379`).
 4. Interact with the server using Redis commands from the `red` package.
 
-        CL-USER> (red:ping)
-        "PONG"
+```lisp
+CL-USER> (red:ping)
+"PONG"
+```
 
 5. Disconnect from the server with `(redis:disconnect)`.
 6. Alternatively, wrap the whole interaction session in `with-connection` macro,
@@ -83,17 +85,21 @@ that tries to do the right thing™
 Since there's no special command to receive messages from Redis via PubSub
 here's how you do it:
 
-    (bt:make-thread (lambda ()
-                      (with-connection ()
-                        (red:subscribe "foo")
-                        (loop :for msg := (expect :anything) :do
-                          (print msg))))
-                    "pubsub-listener")
+```lisp
+(bt:make-thread (lambda ()
+                  (with-connection ()
+                    (red:subscribe "foo")
+                    (loop :for msg := (expect :anything) :do
+                      (print msg))))
+                "pubsub-listener")
+```
 
 To publish, obviously:
 
-    (with-connection ()
-      (red:publish "foo" "test"))
+```lisp
+(with-connection ()
+  (red:publish "foo" "test"))
+```
 
 ### Pipelining
 
@@ -104,37 +110,39 @@ To support that there's `with-pipelining` macro.
 Compare execution times in the following examples
 (with pipelining and without: 6.567 secs vs. 2023.924 secs!):
 
-    (let ((names (let (acc)
-                   (dotimes (i 1000 (nreverse acc))
-                     (push (format nil "n~a" i) acc))))
-          (vals  (let (big-acc)
-                   (dotimes (i 1000 (nreverse big-acc))
-                     (let (acc)
-                       (dotimes (i (random 100))
-                         (push (list (random 10) (format nil "n~a" i)) acc))
-                       (push (nreverse acc) big-acc))))))
-      (time (redis:with-connection ()
-              (redis:with-pipelining
-                (loop :for k :in names :for val :in vals :do
-                  (dolist (v val)
-                    (apply #'red:zadd k v)))
-                (red:zunionstore "result" (length names) names)
-                (red:zrange "result" 0 -1))))
+```
+(let ((names (let (acc)
+               (dotimes (i 1000 (nreverse acc))
+                 (push (format nil "n~a" i) acc))))
+      (vals  (let (big-acc)
+               (dotimes (i 1000 (nreverse big-acc))
+                 (let (acc)
+                   (dotimes (i (random 100))
+                     (push (list (random 10) (format nil "n~a" i)) acc))
+                   (push (nreverse acc) big-acc))))))
+  (time (redis:with-connection ()
+          (redis:with-pipelining
+            (loop :for k :in names :for val :in vals :do
+              (dolist (v val)
+                (apply #'red:zadd k v)))
+            (red:zunionstore "result" (length names) names)
+            (red:zrange "result" 0 -1))))
 
-      ;; Evaluation took:
-      ;;  6.567 seconds of real time
-      ;;  3.900243 seconds of total run time (3.200200 user, 0.700043 system)
+  ;; Evaluation took:
+  ;;  6.567 seconds of real time
+  ;;  3.900243 seconds of total run time (3.200200 user, 0.700043 system)
 
-      (time (redis:with-connection ()
-              (loop :for k :in names :for val :in vals :do
-                (dolist (v val)
-                  (apply #'red:zadd k v)))
-              (red:zunionstore "result" (length names) names)
-              (red:zrange "result" 0 -1))))
+  (time (redis:with-connection ()
+          (loop :for k :in names :for val :in vals :do
+            (dolist (v val)
+              (apply #'red:zadd k v)))
+          (red:zunionstore "result" (length names) names)
+          (red:zrange "result" 0 -1))))
 
-      ;; Evaluation took:
-      ;; 2023.924 seconds of real time
-      ;; 3.560222 seconds of total run time (2.976186 user, 0.584036 system)
+  ;; Evaluation took:
+  ;; 2023.924 seconds of real time
+  ;; 3.560222 seconds of total run time (2.976186 user, 0.584036 system)
+```
 
 Note, that `with-pipelining` calls theoretically may nest,
 but the results will only be available to the highest-level pipeline,
@@ -153,9 +161,11 @@ The best way to implement another method on `expect` is usually with
 and provides a variable `reply`, which holds the decoded reply data
 from the server with the initial character removed. For example:
 
-    (def-expect-method :ok
-      (assert (string= reply "OK"))
-      reply)
+```lisp
+(def-expect-method :ok
+  (assert (string= reply "OK"))
+  reply)
+```
 
 Redis operations are defined as ordinary functions by `def-cmd`
 for which only arguments and return type should be provided.
@@ -167,8 +177,10 @@ and from `RED` package without the prefix.
 
 An example of command definition is given below:
 
-    (def-cmd KEYS (pattern) :multi
-      "Return all the keys matching the given pattern.")
+```lisp
+(def-cmd KEYS (pattern) :multi
+  "Return all the keys matching the given pattern.")
+```
 
 See `commands.lisp` for all defined commands.
 
