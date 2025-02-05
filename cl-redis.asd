@@ -9,7 +9,7 @@
   :maintainer "Vsevolod Dyomkin <vseloved@gmail.com>"
   :licence "MIT"
   :description "A fast and robust Common Lisp client for Redis"
-  :depends-on (#:rutils #:cl-ppcre #:usocket #:flexi-streams #:babel)
+  :depends-on (#:rutils #:cl-ppcre #:usocket #:flexi-streams #:babel #:cl+ssl #:trivial-gray-streams)
   :serial t
   :components ((:file "package")
                (:file "float")
