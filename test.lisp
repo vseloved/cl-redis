@@ -475,6 +475,10 @@
             (red-bitcount "mykey"))
     (should be = 16
             (red-bitop "NOT" "mykey2" "mykey"))
+    (should be equal '("1" "1")
+	    (red-bitfield "bitfield:test" "incrby" "u2" 100 1 "OVERFLOW" "SAT" "incrby" "u2" 102 1))
+    (should be equal '("1")
+	    (red-bitfield_ro "bitfield:test" "GET" "u2" 100))
     (should be string= "Uhis is a Redisg"
             (red-get "mykey"))
     (should be = 16

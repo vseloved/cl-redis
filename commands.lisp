@@ -338,6 +338,13 @@ Warning: left for backwards compatibility. It is now called: GETRANGE.")
   "Count set bits in a string at KEY
 \(with optional bounding indices START and END).")
 
+(def-cmd BITFIELD (key &rest args) :multi
+  "Treats a Redis string as an array of bits, takes a list of
+\operations, returns an array of replies.")
+
+(def-cmd BITFIELD_RO (key &rest args) :multi
+  "Read-only variant of BITFIELD")
+
 (defmethod tell :before ((cmd (eql 'BITCOUNT)) &rest args)
   (assert (or (null (second args)) (third args))))
 
