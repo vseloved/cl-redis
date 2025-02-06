@@ -29,8 +29,8 @@ for debugging purposes.  The default is *STANDARD-OUTPUT*.")
      ;; For SSL streams
      (defmethod trivial-gray-streams:stream-clear-input ((stream cl+ssl::ssl-stream))
        (trivial-gray-streams:stream-clear-input (cl+ssl::ssl-stream-socket stream)))
-
-     (defmethod trivial-gray-streams:stream-read-sequence
+     
+     (defmethod trivial-gray-streams:stream-read-sequence 
          ((stream cl+ssl::ssl-stream) sequence start end &rest args)
        (declare (ignore args))
        (handler-case
@@ -45,8 +45,8 @@ for debugging purposes.  The default is *STANDARD-OUTPUT*.")
          (cl+ssl::ssl-error-zero-return () bytes-read)
          (cl+ssl::ssl-error-syscall () -1)
          (cl+ssl::ssl-error-ssl () -1)))
-
-     (defmethod trivial-gray-streams:stream-write-sequence
+     
+     (defmethod trivial-gray-streams:stream-write-sequence 
          ((stream cl+ssl::ssl-stream) sequence start end &rest args)
        (declare (ignore args))
        (handler-case
@@ -57,17 +57,17 @@ for debugging purposes.  The default is *STANDARD-OUTPUT*.")
          (cl+ssl::ssl-error-syscall () sequence)
          (cl+ssl::ssl-error-ssl () sequence)))
 
-     ;; For regular fd-streams
-     (defmethod trivial-gray-streams:stream-clear-input ((stream sb-sys:fd-stream))
-       (sb-impl::clear-input stream))
-
-     (defmethod trivial-gray-streams:stream-read-sequence
-         ((stream sb-sys:fd-stream) sequence start end &rest args)
+     ;; For regular streams
+     (defmethod trivial-gray-streams:stream-clear-input ((stream stream))
+       (clear-input stream))
+     
+     (defmethod trivial-gray-streams:stream-read-sequence 
+         ((stream stream) sequence start end &rest args)
        (declare (ignore args))
        (read-sequence sequence stream :start start :end end))
-
-     (defmethod trivial-gray-streams:stream-write-sequence
-         ((stream sb-sys:fd-stream) sequence start end &rest args)
+     
+     (defmethod trivial-gray-streams:stream-write-sequence 
+         ((stream stream) sequence start end &rest args)
        (declare (ignore args))
        (write-sequence sequence stream :start start :end end)
        sequence)))
